@@ -1,0 +1,18 @@
+include ':app'
+
+include ':glasses'
+include ':deviceAccess'
+include ':deviceAccess_gatewayProxy'
+include ':asrIntelligentDialogue'
+include ':asrTranslation'
+include ':aiFoundationKit'
+
+include ':customizeSdk'
+include ':coolPadSdk'
+include ':ztePadSdk'
+include ':InspurPadSdk'
+include ':lingXiAgent'
+include ':zuoYeBangLearningMachine'
+include ':littleElephantPADLearningMachine'
+include ':lightweightAdaptation'
+include ':FullyCompatibleSDK'
