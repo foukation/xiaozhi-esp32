@@ -1,0 +1,15 @@
+idf_component_register(
+    SRCS
+        "src/api_config.cc"
+        "src/gateway_client.cc"
+        "src/device_client.cc"
+        "src/report_client.cc"
+        "src/gateway.cc"
+        "src/http_client.cc"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        esp_http_client
+        esp_timer
+        json
+)
