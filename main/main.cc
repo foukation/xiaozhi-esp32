@@ -29,17 +29,20 @@ extern "C" void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-#if RUN_AI_SDK_TEST
+
+    // Initialize and run the application
+    auto& app = Application::GetInstance();
+    app.Initialize();
+
+    #if RUN_AI_SDK_TEST
     // 运行 AI-SDK 测试
     ESP_LOGI(TAG, "Running AI-SDK test mode...");
     test_ai_sdk_functions();
 
     // 测试完成后，程序可以继续运行或退出
     ESP_LOGI(TAG, "AI-SDK test completed. Continuing with normal operation...");
-#endif
+    #endif
 
-    // Initialize and run the application
-    auto& app = Application::GetInstance();
-    app.Initialize();
+
     app.Run();  // This function runs the main event loop and never returns
 }

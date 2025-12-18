@@ -107,14 +107,7 @@ void HTTPClient::get(
 
     // 执行HTTP请求
     esp_err_t err = esp_http_client_perform(client);
-    if (err != ESP_OK) {
-        // 如果请求失败，清理资源并调用错误回调
-        ESP_LOGE(TAG, "HTTP GET request failed: %s", esp_err_to_name(err));
-        if (onError) {
-            onError(esp_err_to_name(err));
-        }
-        delete ctx;
-    }
+    // 注：错误处理由事件处理器统一管理，避免双重释放
 
     // 清理HTTP客户端资源
     esp_http_client_cleanup(client);
@@ -155,14 +148,7 @@ void HTTPClient::post(
 
     // 执行HTTP请求
     esp_err_t err = esp_http_client_perform(client);
-    if (err != ESP_OK) {
-        // 如果请求失败，清理资源并调用错误回调
-        ESP_LOGE(TAG, "HTTP POST request failed: %s", esp_err_to_name(err));
-        if (onError) {
-            onError(esp_err_to_name(err));
-        }
-        delete ctx;
-    }
+    // 注：错误处理由事件处理器统一管理，避免双重释放
 
     // 清理HTTP客户端资源
     esp_http_client_cleanup(client);
