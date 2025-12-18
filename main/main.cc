@@ -12,6 +12,12 @@
 
 #define TAG "main"
 
+// 声明 AI-SDK 测试函数
+extern "C" void test_ai_sdk_functions(void);
+
+// 控制是否运行 AI-SDK 测试的宏
+#define RUN_AI_SDK_TEST 1
+
 extern "C" void app_main(void)
 {
     // Initialize NVS flash for WiFi configuration
@@ -22,6 +28,15 @@ extern "C" void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+#if RUN_AI_SDK_TEST
+    // 运行 AI-SDK 测试
+    ESP_LOGI(TAG, "Running AI-SDK test mode...");
+    test_ai_sdk_functions();
+
+    // 测试完成后，程序可以继续运行或退出
+    ESP_LOGI(TAG, "AI-SDK test completed. Continuing with normal operation...");
+#endif
 
     // Initialize and run the application
     auto& app = Application::GetInstance();

@@ -35,6 +35,7 @@ set(SOURCES "audio/audio_codec.cc"
             "settings.cc"
             "device_state_machine.cc"
             "assets.cc"
+            "test_ai_sdk.cpp"
             "main.cc"
             )
 
