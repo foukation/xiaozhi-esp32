@@ -2,10 +2,25 @@
 #include "ai_sdk/device_client.h"
 #include "ai_sdk/report_client.h"
 #include "esp_log.h"
+#include "esp_sntp.h"
+#include <ctime>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 static const char* TAG = "AI_SDK_TEST";
+
+static void print_current_time(void) {
+    time_t now;
+    time(&now);
+
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+
+    char time_str[32];
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &timeinfo);
+
+    ESP_LOGI(TAG, "Current time: %s", time_str);
+}
 
 // 测试网关信息获取
 static void test_gateway_info() {
@@ -112,10 +127,14 @@ static void test_periodic_report() {
 // AI-SDK 测试入口函数
 extern "C" void test_ai_sdk_functions(void)
 {
+
     ESP_LOGI(TAG, "Starting AI-SDK Test...");
 
     // 等待 Wi-Fi 连接（实际使用时需要先连接 Wi-Fi）
     vTaskDelay(pdMS_TO_TICKS(5000));
+
+    // 打印当前时间
+    print_current_time();
 
     // 运行测试
     test_gateway_info();
