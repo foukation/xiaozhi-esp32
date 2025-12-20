@@ -94,6 +94,34 @@ void HTTPClient::get(
     config.user_data = ctx;             // 传递上下文数据
     config.timeout_ms = 15000;          // 设置超时时间15秒
 
+    // ⚠️ ⚠️ ⚠️ 测试专用配置：禁用SSL证书验证 ⚠️ ⚠️ ⚠️
+    //
+    // 警告：以下配置仅供测试环境使用！生产环境必须启用证书验证！
+    //
+    // 问题背景：
+    //   ESP-IDF的TLS层要求必须配置至少一种证书验证方式，否则会报错：
+    //   "No server verification option set in esp_tls_cfg_t structure"
+    //
+    // 解决方案（测试环境禁用验证）：
+    //   1. 设置 transport_type = HTTP_TRANSPORT_OVER_SSL（启用HTTPS）
+    //   2. 设置 cert_pem = NULL（不加载CA证书）
+    //   3. 设置 crt_bundle_attach = NULL（不加载系统CA证书包）
+    //   4. 设置 skip_cert_common_name_check = true（跳过CN验证）
+    //   5. 设置 use_global_ca_store = false（明确告知ESP-IDF不使用全局CA存储）
+    //      ↑ 关键：此标志让ESP-IDF知道你已经配置了验证选项（虽然是禁用）
+    //
+    // ⚠️ 安全警告：
+    //    不验证服务器证书会使系统易受中间人攻击！
+    //    生产环境必须使用以下任一方式验证证书：
+    //    - config.crt_bundle_attach = esp_crt_bundle_attach;   // 系统证书包（推荐）
+    //    - config.cert_pem = ca_cert_pem;                      // 指定CA证书
+    //    - config.pin_cert_sha256 = cert_hash;                 // 证书指纹
+    config.transport_type = HTTP_TRANSPORT_OVER_SSL;
+    config.crt_bundle_attach = NULL;              // 不加载系统CA证书包
+    config.cert_pem = NULL;                       // 不加载CA证书（禁用验证）
+    config.skip_cert_common_name_check = true;    // 跳过证书CN验证
+    config.use_global_ca_store = false;           // 不使用全局CA存储（必须显式设置）
+
     // 初始化HTTP客户端
     esp_http_client_handle_t client = esp_http_client_init(&config);
 
@@ -132,6 +160,34 @@ void HTTPClient::post(
     config.event_handler = http_event_handler;  // 设置事件处理函数
     config.user_data = ctx;             // 传递上下文数据
     config.timeout_ms = 15000;          // 设置超时时间15秒
+
+    // ⚠️ ⚠️ ⚠️ 测试专用配置：禁用SSL证书验证 ⚠️ ⚠️ ⚠️
+    //
+    // 警告：以下配置仅供测试环境使用！生产环境必须启用证书验证！
+    //
+    // 问题背景：
+    //   ESP-IDF的TLS层要求必须配置至少一种证书验证方式，否则会报错：
+    //   "No server verification option set in esp_tls_cfg_t structure"
+    //
+    // 解决方案（测试环境禁用验证）：
+    //   1. 设置 transport_type = HTTP_TRANSPORT_OVER_SSL（启用HTTPS）
+    //   2. 设置 cert_pem = NULL（不加载CA证书）
+    //   3. 设置 crt_bundle_attach = NULL（不加载系统CA证书包）
+    //   4. 设置 skip_cert_common_name_check = true（跳过CN验证）
+    //   5. 设置 use_global_ca_store = false（明确告知ESP-IDF不使用全局CA存储）
+    //      ↑ 关键：此标志让ESP-IDF知道你已经配置了验证选项（虽然是禁用）
+    //
+    // ⚠️ 安全警告：
+    //    不验证服务器证书会使系统易受中间人攻击！
+    //    生产环境必须使用以下任一方式验证证书：
+    //    - config.crt_bundle_attach = esp_crt_bundle_attach;   // 系统证书包（推荐）
+    //    - config.cert_pem = ca_cert_pem;                      // 指定CA证书
+    //    - config.pin_cert_sha256 = cert_hash;                 // 证书指纹
+    config.transport_type = HTTP_TRANSPORT_OVER_SSL;
+    config.crt_bundle_attach = NULL;              // 不加载系统CA证书包
+    config.cert_pem = NULL;                       // 不加载CA证书（禁用验证）
+    config.skip_cert_common_name_check = true;    // 跳过证书CN验证
+    config.use_global_ca_store = false;           // 不使用全局CA存储（必须显式设置）
 
     // 初始化HTTP客户端
     esp_http_client_handle_t client = esp_http_client_init(&config);

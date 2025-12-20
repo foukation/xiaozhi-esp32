@@ -4,8 +4,8 @@ managed_components/
 build/
 .vscode/
 .devcontainer/
-sdkconfig.old
-sdkconfig
+# sdkconfig.old
+# sdkconfig
 dependencies.lock
 .env
 releases/
