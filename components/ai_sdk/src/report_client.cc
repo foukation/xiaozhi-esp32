@@ -3,8 +3,8 @@
 #include "ai_sdk/http_client.h"
 #include "cJSON.h"
 #include "esp_log.h"
+#include "esp_random.h"  // ESP-IDF硬件随机数生成器（替代C++标准库，避免内存问题）
 #include <cstdlib>
-#include <random>
 
 namespace ai_sdk {
 
@@ -154,12 +154,22 @@ void ReportClient::scheduleNextReport() {
     }
 
     // 计算下次上报时间：12小时 + 随机偏移（-15到+15分钟）
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(-900000000, 900000000); // -15分钟到+15分钟（微秒）
+    //
+    // ⚠️ 重要说明：使用ESP-IDF原生随机数API替代C++标准库
+    // 原因：
+    // 1. C++标准库的std::random_device和std::mt19937在FreeRTOS中不稳定
+    //    - std::mt19937会分配大量内存（624字节状态），可能导致堆溢出
+    //    - 多次创建/销毁会调用多次new/delete，与ESP-IDF堆管理冲突
+    // 2. 之前代码在调用dis(gen)时崩溃：\"LoadProhibited at 0xcd645794\"
+    //    - 生成的随机数非法导致ESP_LOGI访问无效内存
+    // 3. ESP-IDF的esp_random()是硬件随机数生成器（如果有），或高质量软件实现
+    //    - 更稳定，无额外内存分配，与FreeRTOS完全兼容
+    //
+    // 随机偏移范围：-15分钟到+15分钟（转换为微秒）
+    // esp_random()返回32位无符号随机数，使用模运算映射到目标范围
+    int64_t random_offset = (static_cast<int64_t>(esp_random()) % 1800000000LL) - 900000000LL;
 
     int64_t base_interval = 12LL * 60 * 60 * 1000000; // 12小时（微秒）
-    int64_t random_offset = dis(gen);
     int64_t next_interval = base_interval + random_offset;
 
     ESP_LOGI(TAG, "Next report scheduled in %lld seconds", next_interval / 1000000);
