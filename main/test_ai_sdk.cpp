@@ -287,13 +287,48 @@ static void time_print_task(void *pvParameters)
     }
 }
 
+void ai_sdk_test_task(void* arg) {
+
+    ESP_LOGI(TAG, "等待时间同步完成...");
+      int wait_seconds = 0;
+      while (wait_seconds < 60) {
+          time_t now;
+          time(&now);
+
+          if (now > 1609459200) {
+              ESP_LOGI(TAG, "时间同步完成！");
+              // 执行后面的测试代码...
+              break;
+          }
+
+          ESP_LOGI(TAG, "等待同步中... %d秒", wait_seconds);
+          vTaskDelay(pdMS_TO_TICKS(1000));
+          wait_seconds++;
+      }
+
+        // 运行AI-SDK测试
+        test_gateway_info();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+
+        test_device_info();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+
+        test_data_report();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+
+        test_periodic_report();
+
+      // 执行测试...
+      vTaskDelete(NULL);
+  }
+
 // AI-SDK 测试入口函数
 extern "C" void test_ai_sdk_functions(void)
 {
     ESP_LOGI(TAG, "Starting AI-SDK Test...");
 
     // 等待 Wi-Fi 连接（实际使用时需要先连接 Wi-Fi）
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    //vTaskDelay(pdMS_TO_TICKS(5000));
 
     // 启动SNTP时间同步（在测试前确保时间准确）
     // 创建时间同步任务，栈大小4096，优先级4
@@ -304,30 +339,22 @@ extern "C" void test_ai_sdk_functions(void)
     // =========================================
     // 使用轮询方式检查同步状态
     // 参数：10秒超时，每500ms检查一次
-    bool sync_ok = wait_for_sntp_sync(10000, 500);
+    //bool sync_ok = wait_for_sntp_sync(10000, 500);
 
     // 根据同步结果打印不同信息
-    if (sync_ok) {
+    /* if (sync_ok) {
         ESP_LOGI(TAG, "✅ 时间同步完成，开始AI-SDK测试");
     } else {
         ESP_LOGW(TAG, "⚠️ 时间同步失败，但仍继续测试（时间戳可能不准确）");
-    }
+    } */
     // =========================================
 
     // 打印当前时间（同步后的时间，如果同步成功）
     print_current_time();
 
-    // 运行AI-SDK测试
-    test_gateway_info();
-    vTaskDelay(pdMS_TO_TICKS(2000));
 
-    test_device_info();
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    test_data_report();
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    test_periodic_report();
+    // 在主任务中：
+    xTaskCreate(ai_sdk_test_task, "ai_sdk_test", 4096, NULL, 1, NULL);  // 低优先级
 
     ESP_LOGI(TAG, "All tests initiated. Check logs for results.");
 
