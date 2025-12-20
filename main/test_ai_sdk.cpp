@@ -263,6 +263,30 @@ static void test_periodic_report() {
     }
 }
 
+/**
+ * @brief 定时打印当前时间的任务
+ *
+ * @param pvParameters 任务参数（未使用）
+ *
+ * @details
+ * - 每10秒打印一次当前系统时间
+ * - 使用 FreeRTOS 延时实现精确的时间间隔
+ * - 任务会一直运行，直到手动删除
+ * - 适合长时间运行的监控和日志记录
+ */
+static void time_print_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "Time print task started");
+
+    while (1) {
+        // 打印当前时间
+        print_current_time();
+
+        // 等待10秒（pdMS_TO_TICKS将毫秒转换为FreeRTOS时钟节拍）
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
+}
+
 // AI-SDK 测试入口函数
 extern "C" void test_ai_sdk_functions(void)
 {
@@ -273,7 +297,7 @@ extern "C" void test_ai_sdk_functions(void)
 
     // 启动SNTP时间同步（在测试前确保时间准确）
     // 创建时间同步任务，栈大小4096，优先级4
-    //xTaskCreate(sntp_sync_task, "sntp_sync", 4096, NULL, 4, NULL);
+    // xTaskCreate(sntp_sync_task, "sntp_sync", 4096, NULL, 4, NULL);
 
     // =========================================
     // 等待SNTP时间同步完成
@@ -306,4 +330,11 @@ extern "C" void test_ai_sdk_functions(void)
     test_periodic_report();
 
     ESP_LOGI(TAG, "All tests initiated. Check logs for results.");
+
+    // 启动时间打印任务（每10秒输出一次当前时间）
+    xTaskCreate(time_print_task, "time_print", 2048, NULL, 3, NULL);
+    ESP_LOGI(TAG, "Periodic time output started (every 10 seconds)");
+
+    // 删除测试任务（测试已执行完成，资源可以释放）
+    // vTaskDelete(NULL);
 }
