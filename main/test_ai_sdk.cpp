@@ -291,17 +291,17 @@ void ai_sdk_test_task(void* arg) {
 
     ESP_LOGI(TAG, "等待时间同步完成...");
       int wait_seconds = 0;
-      while (wait_seconds < 60) {
+      while (wait_seconds < 20) {
           time_t now;
           time(&now);
 
           if (now > 1609459200) {
               ESP_LOGI(TAG, "时间同步完成！");
               // 执行后面的测试代码...
-              break;
+              //break;
           }
 
-          ESP_LOGI(TAG, "等待同步中... %d秒", wait_seconds);
+          ESP_LOGI(TAG, "等待... %d秒", wait_seconds);
           vTaskDelay(pdMS_TO_TICKS(1000));
           wait_seconds++;
       }
