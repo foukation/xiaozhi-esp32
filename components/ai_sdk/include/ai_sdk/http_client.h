@@ -3,6 +3,7 @@
 #include <string>
 #include <map>
 #include <functional>
+#include <memory>  // 添加智能指针支持
 #include "esp_http_client.h"
 #include "esp_err.h"
 
@@ -13,6 +14,11 @@ class HTTPClient;
 
 /**
  * HTTP请求上下文结构
+ *
+ * 内存管理说明：
+ * - 使用 shared_ptr 自动管理生命周期，避免手动 delete 导致的重复释放问题
+ * - 在 HTTP 事件处理器中不再需要手动删除 ctx 对象
+ * - shared_ptr 会在最后一个引用消失时自动释放内存
  */
 struct HTTPContext {
     std::function<void(const std::string&)> on_success;  // 成功回调函数

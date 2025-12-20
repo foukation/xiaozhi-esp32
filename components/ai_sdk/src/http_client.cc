@@ -16,11 +16,12 @@ esp_err_t HTTPClient::http_event_handler(esp_http_client_event_t *evt) {
     switch(evt->event_id) {
         case HTTP_EVENT_ERROR:
             // HTTP连接错误
+            // 内存管理：使用智能指针后，不再需要手动 delete ctx
+            // ctx 的生命周期由 shared_ptr 自动管理
             ESP_LOGE(TAG, "HTTP_EVENT_ERROR");
             if (ctx->on_error) {
                 ctx->on_error("HTTP_EVENT_ERROR");
             }
-            delete ctx;
             return ESP_FAIL;
 
         case HTTP_EVENT_ON_CONNECTED:
@@ -44,22 +45,24 @@ esp_err_t HTTPClient::http_event_handler(esp_http_client_event_t *evt) {
 
         case HTTP_EVENT_ON_FINISH:
             // HTTP请求完成
+            // 内存管理：使用智能指针后，不再需要手动 delete ctx
+            // ctx 的生命周期由 shared_ptr 自动管理
             // 调用成功回调并传递完整响应
             ESP_LOGI(TAG, "HTTP_EVENT_ON_FINISH");
             if (ctx->on_success) {
                 ctx->on_success(ctx->response_data);
             }
-            delete ctx;
             break;
 
         case HTTP_EVENT_DISCONNECTED:
             // HTTP连接断开
+            // 内存管理：使用智能指针后，不再需要手动 delete ctx
+            // ctx 的生命周期由 shared_ptr 自动管理
             ESP_LOGI(TAG, "HTTP_EVENT_DISCONNECTED");
             // 如果没有接收到任何数据，调用错误回调
             if (ctx->on_error && ctx->response_data.empty()) {
                 ctx->on_error("HTTP_EVENT_DISCONNECTED");
             }
-            delete ctx;
             break;
 
         case HTTP_EVENT_HEADERS_SENT:
@@ -81,8 +84,12 @@ void HTTPClient::get(
     ResponseCallback onSuccess,
     ErrorCallback onError
 ) {
-    // 创建HTTP请求上下文，用于传递回调和缓存响应
-    HTTPContext* ctx = new HTTPContext();
+    // 创建HTTP请求上下文，使用智能指针自动管理生命周期
+    // 内存管理优化：
+    // - 使用 shared_ptr 避免手动 delete 导致的重复释放问题
+    // - 即使在多个HTTP事件中被访问，shared_ptr 也能正确管理生命周期
+    // - 当最后一个引用消失（函数返回 + HTTP客户端清理完成）时自动释放
+    auto ctx = std::make_shared<HTTPContext>();
     ctx->on_success = onSuccess;
     ctx->on_error = onError;
     ctx->client = this;
@@ -91,8 +98,11 @@ void HTTPClient::get(
     esp_http_client_config_t config = {};
     config.url = url.c_str();           // 设置请求URL
     config.event_handler = http_event_handler;  // 设置事件处理函数
-    config.user_data = ctx;             // 传递上下文数据
     config.timeout_ms = 15000;          // 设置超时时间15秒
+
+    // 注意：user_data 存储裸指针，但实际生命周期由 shared_ptr 管理
+    // 这种方式兼容ESP-IDF的C风格回调，同时享受C++智能指针的安全性
+    config.user_data = ctx.get();
 
     // ⚠️ ⚠️ ⚠️ 测试专用配置：禁用SSL证书验证 ⚠️ ⚠️ ⚠️
     //
@@ -148,8 +158,12 @@ void HTTPClient::post(
     ResponseCallback onSuccess,
     ErrorCallback onError
 ) {
-    // 创建HTTP请求上下文
-    HTTPContext* ctx = new HTTPContext();
+    // 创建HTTP请求上下文，使用智能指针自动管理生命周期
+    // 内存管理优化：
+    // - 使用 shared_ptr 避免手动 delete 导致的重复释放问题
+    // - 即使在多个HTTP事件中被访问，shared_ptr 也能正确管理生命周期
+    // - 当最后一个引用消失（函数返回 + HTTP客户端清理完成）时自动释放
+    auto ctx = std::make_shared<HTTPContext>();
     ctx->on_success = onSuccess;
     ctx->on_error = onError;
     ctx->client = this;
@@ -158,8 +172,11 @@ void HTTPClient::post(
     esp_http_client_config_t config = {};
     config.url = url.c_str();           // 设置请求URL
     config.event_handler = http_event_handler;  // 设置事件处理函数
-    config.user_data = ctx;             // 传递上下文数据
     config.timeout_ms = 15000;          // 设置超时时间15秒
+
+    // 注意：user_data 存储裸指针，但实际生命周期由 shared_ptr 管理
+    // 这种方式兼容ESP-IDF的C风格回调，同时享受C++智能指针的安全性
+    config.user_data = ctx.get();
 
     // ⚠️ ⚠️ ⚠️ 测试专用配置：禁用SSL证书验证 ⚠️ ⚠️ ⚠️
     //
