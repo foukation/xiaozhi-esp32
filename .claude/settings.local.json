@@ -3,7 +3,8 @@
     "allow": [
       "Bash(tree:*)",
       "Bash(dir:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(findstr /v \"Reference\":*)"
     ]
   }
 }
