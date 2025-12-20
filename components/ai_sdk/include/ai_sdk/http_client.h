@@ -57,6 +57,26 @@ public:
     );
 
 private:
+    /**
+     * HTTP事件处理器（静态）
+     *
+     * 处理ESP-IDF HTTP客户端的所有事件，包括：
+     * - 连接建立/断开
+     * - 响应头接收
+     * - 响应体数据接收
+     * - 请求完成
+     * - 错误处理
+     *
+     * 工作原理：
+     * - ESP-IDF的事件回调必须是静态函数
+     * - 通过evt->user_data获取HTTPContext指针
+     * - 根据事件类型调用相应的回调函数（on_success/on_error）
+     *
+     * 内存管理：使用智能指针管理HTTPContext生命周期，避免手动释放
+     *
+     * @param evt HTTP事件结构体，包含事件类型和相关数据
+     * @return ESP_OK表示成功，ESP_FAIL表示失败
+     */
     static esp_err_t http_event_handler(esp_http_client_event_t *evt);
 };
 
