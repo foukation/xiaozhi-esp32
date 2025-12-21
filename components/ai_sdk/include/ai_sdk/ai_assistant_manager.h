@@ -324,7 +324,17 @@ public:
     void* asrIntelligentDialogueHelp();
 
     /**
-     * 提供 ASR 翻译帮助实例
+     * 提供 ASR 智能对话（会话版本）
+     *
+     * 参考 Android 的 asrIntelligentConversationHelp() 实现。
+     * 支持多轮对话的 ASR 功能。
+     *
+     * @return 会话实例指针，ESP32 上返回 nullptr
+     */
+    void* asrIntelligentConversationHelp();
+
+    /**
+     * 提供 ASR 翻译帮助
      *
      * 参考 Android 的 asrTranslationHelp() 实现。
      * 提供语音识别翻译功能。

@@ -112,13 +112,13 @@ private:
      * 错误处理回调
      */
     void onError(const std::string& error,
-                 DeviceInfoErrorCallback onError);
+                 DeviceInfoErrorCallback callback);
 
     void onError(const std::string& error,
-                 GatewayErrorCallback onError);
+                 GatewayErrorCallback callback);
 
     void onError(const std::string& error,
-                 ReportErrorCallback onError);
+                 ReportErrorCallback callback);
 };
 
 } // namespace ai_sdk

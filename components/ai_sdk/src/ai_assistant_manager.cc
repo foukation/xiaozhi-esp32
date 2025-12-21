@@ -115,8 +115,8 @@ void AIAssistantManager::destroyInstance() {
  * @param config AI助手配置（唯一指针，所有权转移）
  */
 AIAssistantManager::AIAssistantManager(void* context, std::unique_ptr<AIAssistConfig> config)
-    : context_(context),
-      config_(std::move(config)),  // 转移所有权
+    : config_(std::move(config)),  // 转移所有权
+      context_(context),
       initialized_(false) {
     // 初始化内部组件
     initWithConfig();
