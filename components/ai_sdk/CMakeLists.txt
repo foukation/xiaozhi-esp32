@@ -25,6 +25,7 @@ idf_component_register(
         "src/report_client.cc"        # 上报客户端（数据上报和心跳）
         "src/http_client.cc"          # HTTP客户端封装
         "src/ai_assistant_manager.cc" # AI助手管理器（中央管理类）
+        "src/gate_way.cc"             # GateWay 网关转发层（与 Android API 保持一致）
 
     # 头文件目录
     # 公共头文件路径，其他组件可以通过#include "ai_sdk/xxx.h"引用
