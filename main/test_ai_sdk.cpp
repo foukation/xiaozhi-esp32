@@ -1,6 +1,4 @@
-#include "ai_sdk/gateway_client.h"
-#include "ai_sdk/device_client.h"
-#include "ai_sdk/report_client.h"
+#include "ai_sdk/ai_assistant_manager.h"
 #include "esp_log.h"
 #include "esp_sntp.h"
 #include <ctime>
@@ -161,13 +159,99 @@ static void print_current_time(void) {
     ESP_LOGI(TAG, "Current time: %s", time_str);
 }
 
-// 测试网关信息获取
-static void test_gateway_info() {
-    ESP_LOGI(TAG, "=== Testing Gateway Info ===");
+// AI SDK 管理器实例
+static ai_sdk::AIAssistantManager* g_manager = nullptr;
 
-    ai_sdk::GatewayClient gateway;
+/**
+ * @brief 初始化 AI SDK
+ *
+ * 按照 Android AIAssistantManager 的设计进行初始化：
+ * 1. 创建配置（使用 Builder 模式）
+ * 2. 初始化管理器
+ * 3. 获取实例
+ *
+ * @return true 初始化成功，false 失败
+ */
+static bool initialize_ai_sdk() {
+    ESP_LOGI(TAG, "Initializing AI SDK...");
 
-    gateway.getGateWay(
+    // 1. 创建配置（类似 Android 的 Builder）
+    auto builder = std::make_unique<ai_sdk::AIAssistConfig::Builder>();
+    auto config = builder
+        ->deviceNo("ESP32-TEST-001")
+        ->deviceNoType("SN")
+        ->productId("YOUR_PRODUCT_ID")
+        ->productKey("YOUR_PRODUCT_KEY")
+        ->deviceId("")           // 初始为空，将从云端获取
+        ->deviceSecret("")       // 初始为空，将从云端获取
+        ->build();
+
+    // 2. 初始化管理器（关键！类似 Android initialize）
+    ai_sdk::AIAssistantManager::initialize(nullptr, std::move(config));
+
+    // 3. 获取实例
+    try {
+        g_manager = &ai_sdk::AIAssistantManager::getInstance();
+        ESP_LOGI(TAG, "AI SDK initialized successfully");
+        return true;
+    } catch (const std::exception& e) {
+        ESP_LOGE(TAG, "Failed to get AI SDK instance: %s", e.what());
+        return false;
+    }
+}
+
+/**
+ * @brief 测试设备信息获取（通过 GateWay）
+ *
+ * 通过 gateWayHelp() 访问网关对象，然后调用 obtainDeviceInformation()
+ * 这与 Android 的调用方式完全一致：manager.gateWayHelp().obtainDeviceInformation()
+ *
+ * 重要说明：
+ * - 不能直接调用 g_manager->obtainDeviceInformation()（该方法已在 AIAssistantManager 中删除）
+ * - 必须通过 gateWayHelp() 访问 GateWay 对象
+ * - 回调函数处理成功和错误情况
+ *
+ * 参考 Android: manager.gateWayHelp().obtainDeviceInformation(onSuccess, onError)
+ */
+static void test_device_information() {
+    ESP_LOGI(TAG, "=== Testing Device Information ===");
+
+    if (!g_manager) {
+        ESP_LOGE(TAG, "AI SDK not initialized!");
+        return;
+    }
+
+    // 通过 gateWayHelp() 调用 obtainDeviceInformation()
+    // 这与 Android 的调用方式完全一致
+    g_manager->gateWayHelp().obtainDeviceInformation(
+        [](const ai_sdk::DeviceInfoResponse& response) {
+            ESP_LOGI(TAG, "Device info success:");
+            ESP_LOGI(TAG, "  Status: %d", response.status);
+            ESP_LOGI(TAG, "  Device ID: %s", response.data.deviceId.c_str());
+            ESP_LOGI(TAG, "  Device Secret: %s", response.data.deviceSecret.c_str());
+        },
+        [](const std::string& error) {
+            ESP_LOGE(TAG, "Device info error: %s", error.c_str());
+        }
+    );
+
+    ESP_LOGI(TAG, "Device information request sent, check logs for results");
+}
+
+/**
+ * @brief 测试网关访问（手动调用）
+ */
+static void test_gateway_access() {
+    ESP_LOGI(TAG, "=== Testing Gateway Access ===");
+
+    if (!g_manager) {
+        ESP_LOGE(TAG, "AI SDK not initialized!");
+        return;
+    }
+
+    // 通过 gateWayHelp() 获取网关对象，然后调用 getGateWay()
+    // 这与 Android 的调用方式完全一致：manager.gateWayHelp().getGateWay()
+    g_manager->gateWayHelp().getGateWay(
         [](const ai_sdk::GatewayInfo& info, const std::string& message) {
             ESP_LOGI(TAG, "Gateway success:");
             ESP_LOGI(TAG, "  Token: %s", info.token.c_str());
@@ -183,43 +267,27 @@ static void test_gateway_info() {
     );
 }
 
-// 测试设备信息获取
-static void test_device_info() {
-    ESP_LOGI(TAG, "=== Testing Device Info ===");
-
-    ai_sdk::DeviceClient device;
-    ai_sdk::DeviceInfoRequest request;
-    request.deviceNoType = "DEVICE_TYPE_ESP32";
-    request.deviceNo = "test_device_001";
-    request.productId = "product_123";
-    request.productKey = "product_key_abc";
-
-    device.obtainDeviceInformation(
-        request,
-        [](const ai_sdk::DeviceInfoResponse& response) {
-            ESP_LOGI(TAG, "Device auth success:");
-            ESP_LOGI(TAG, "  Status: %d", response.status);
-            ESP_LOGI(TAG, "  Device ID: %s", response.data.deviceId.c_str());
-            ESP_LOGI(TAG, "  Device Secret: %s", response.data.deviceSecret.c_str());
-        },
-        [](const std::string& error) {
-            ESP_LOGE(TAG, "Device auth error: %s", error.c_str());
-        }
-    );
-}
-
-// 测试数据上报
+/**
+ * @brief 测试数据上报（手动调用）
+ */
 static void test_data_report() {
     ESP_LOGI(TAG, "=== Testing Data Report ===");
 
-    ai_sdk::ReportClient report;
+    if (!g_manager) {
+        ESP_LOGE(TAG, "AI SDK not initialized!");
+        return;
+    }
+
+    // 构建上报请求
     ai_sdk::DeviceReportRequest request;
     request.eventType = "heartbeat";
     request.params["status"] = "online";
     request.params["battery"] = "85";
     request.params["temperature"] = "25.6";
 
-    report.dataReport(
+    // 通过 gateWayHelp() 调用 dataReport()
+    // 这与 Android 的调用方式完全一致：manager.gateWayHelp().dataReport()
+    g_manager->gateWayHelp().dataReport(
         request,
         [](const ai_sdk::DeviceReportResponse& response) {
             ESP_LOGI(TAG, "Data report success, status: %d", response.status);
@@ -228,39 +296,6 @@ static void test_data_report() {
             ESP_LOGE(TAG, "Data report error: %s", error.c_str());
         }
     );
-}
-
-// 测试定时上报
-static void test_periodic_report() {
-    ESP_LOGI(TAG, "=== Testing Periodic Report ===");
-
-    static ai_sdk::ReportClient report;
-
-    // 启动定时上报
-    bool started = report.startPeriodicReport([]() {
-        ESP_LOGI(TAG, "Executing periodic report...");
-
-        ai_sdk::DeviceReportRequest request;
-        request.eventType = "periodic_heartbeat";
-        request.params["uptime"] = "3600";
-        request.params["memory"] = "1024";
-
-        report.dataReport(
-            request,
-            [](const ai_sdk::DeviceReportResponse& response) {
-                ESP_LOGI(TAG, "Periodic report sent, status: %d", response.status);
-            },
-            [](const std::string& error) {
-                ESP_LOGE(TAG, "Periodic report failed: %s", error.c_str());
-            }
-        );
-    });
-
-    if (started) {
-        ESP_LOGI(TAG, "Periodic report started (every 12 hours)");
-    } else {
-        ESP_LOGE(TAG, "Failed to start periodic report");
-    }
 }
 
 /**
@@ -287,81 +322,206 @@ static void time_print_task(void *pvParameters)
     }
 }
 
+/**
+ * @brief AI SDK 测试任务（核心测试流程）
+ *
+ * 该任务演示了如何使用新的 AI SDK（与 Android 设计完全一致）：
+ *
+ * 测试步骤：
+ * 1. 等待时间同步（ESP32 需要准确的时间戳）
+ * 2. 初始化 AI SDK（使用 AIAssistantManager::initialize）
+ * 3. 测试完整的设备启动流程（调用 obtainDeviceInformation）
+ * 4. 可选择测试单独的功能
+ *
+ * 重要说明：
+ * - 本任务完全遵循 Android AIAssistantManager 的使用模式
+ * - 所有操作都通过 AIAssistantManager 实例完成
+ * - 网关操作统一通过 gateWayHelp() 访问
+ * - 这是与 Android 项目保持一致的示例代码
+ *
+ * 与旧版的区别：
+ * - ❌ 旧版：直接创建 GatewayClient、DeviceClient、ReportClient
+ * - ✅ 新版：通过 AIAssistantManager::gateWayHelp() 统一访问
+ *
+ * @param arg 任务参数（未使用）
+ */
 void ai_sdk_test_task(void* arg) {
+    ESP_LOGI(TAG, "AI SDK test task started");
 
-    ESP_LOGI(TAG, "等待时间同步完成...");
-      int wait_seconds = 0;
-      while (wait_seconds < 20) {
-          time_t now;
-          time(&now);
+    // ============================================
+    // 步骤 1: 等待时间同步完成
+    // ============================================
+    // ESP32 需要准确的时间戳，因为：
+    // 1. SSL/TLS 证书验证需要准确时间
+    // 2. 上报数据的时间戳需要准确
+    // 3. 定时任务调度需要准确时间
+    ESP_LOGI(TAG, "Waiting for time synchronization...");
+    int wait_seconds = 0;
+    while (wait_seconds < 20) {
+        time_t now;
+        time(&now);
 
-          if (now > 1609459200) {
-              ESP_LOGI(TAG, "时间同步完成！");
-              // 执行后面的测试代码...
-              //break;
-          }
+        // 检查时间是否已同步（如果时间 > 2021年，说明已同步）
+        if (now > 1609459200) {
+            ESP_LOGI(TAG, "Time synchronization completed!");
+            break;
+        }
 
-          ESP_LOGI(TAG, "等待... %d秒", wait_seconds);
-          vTaskDelay(pdMS_TO_TICKS(1000));
-          wait_seconds++;
-      }
+        ESP_LOGI(TAG, "Waiting... %d seconds", wait_seconds);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        wait_seconds++;
+    }
 
-        // 运行AI-SDK测试
-        test_gateway_info();
-        vTaskDelay(pdMS_TO_TICKS(2000));
+    // 处理时间同步超时的情况
+    if (wait_seconds >= 20) {
+        ESP_LOGW(TAG, "SNTP sync timeout, but continuing test (timestamps may be inaccurate)");
+    }
 
-        test_device_info();
-        vTaskDelay(pdMS_TO_TICKS(2000));
+    // 打印当前时间（用于验证时间同步）
+    print_current_time();
+    ESP_LOGI(TAG, "Time sync step completed");
 
-        test_data_report();
-        vTaskDelay(pdMS_TO_TICKS(2000));
+    // ============================================
+    // 步骤 2: 初始化 AI SDK
+    // ============================================
+    // 这是关键改变点！现在使用 AIAssistantManager 统一管理
+    // 类似 Android: AIAssistantManager.initialize(context, config)
+    if (!initialize_ai_sdk()) {
+        ESP_LOGE(TAG, "AI SDK initialization failed! Cannot proceed with tests.");
+        vTaskDelete(NULL);
+        return;
+    }
+    ESP_LOGI(TAG, "AI SDK initialization completed");
 
-        test_periodic_report();
+    // 等待一小段时间，确保初始化完成
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
-      // 执行测试...
-      vTaskDelete(NULL);
-  }
+    // ============================================
+    // 步骤 3: 测试 GateWay 功能
+    // ============================================
+    // 这些功能都通过 gateWayHelp() 访问，与 Android 完全一致
+    // 注意：AIAssistantManager 不再直接提供这些方法
+    // 必须通过 manager.gateWayHelp().xxx() 调用
+    ESP_LOGI(TAG, "Testing GateWay features...");
 
-// AI-SDK 测试入口函数
+    // 测试 1: 设备信息获取（通过 gateWayHelp）
+    ESP_LOGI(TAG, "Test 1: Device Information");
+    test_device_information();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // 测试 2: 网关访问（手动调用）
+    ESP_LOGI(TAG, "Test 2: Gateway Access");
+    test_gateway_access();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // 测试 3: 数据上报（手动调用）
+    ESP_LOGI(TAG, "Test 3: Data Report");
+    test_data_report();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // 测试 4: 定时上报（可选）
+//    ESP_LOGI(TAG, "Test 4: Periodic Report");
+//    test_periodic_report();
+//    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // ============================================
+    // 步骤 4: 测试单独的功能（可选）
+    // ============================================
+    // 这些功能也可以手动调用，用于调试或特殊场景
+    // 注释掉的部分可以根据需要启用
+    ESP_LOGI(TAG, "Optional individual feature tests (commented out)");
+
+    // test_periodic_report();     // 测试定时上报
+
+    // ============================================
+    // 测试完成
+    // ============================================
+    ESP_LOGI(TAG, "All test steps completed! Check logs above for results.");
+    vTaskDelete(NULL);
+}
+
+/**
+ * @brief AI-SDK 测试入口函数（主入口）
+ *
+ * 这是 AI SDK 测试的入口函数，演示了如何像 Android 一样使用 AI SDK。
+ *
+ * 核心特点：
+ * - 完全遵循 Android AIAssistantManager 的设计模式
+ * - 统一通过 AIAssistantManager 管理所有 AI 功能
+ * - 网关操作统一通过 gateWayHelp() 访问
+ * - 初始化流程：initialize() -> getInstance() -> 调用功能
+ *
+ * 调用示例：
+ * // 1. 创建配置
+ * auto builder = std::make_unique<AIAssistConfig::Builder>();
+ * auto config = builder->deviceNo("device-001")
+ *                      ->productId("PROD001")
+ *                      ->productKey("KEY001")
+ *                      ->build();
+ *
+ * // 2. 初始化管理器（类似 Android：AIAssistantManager.initialize(context, config)）
+ * AIAssistantManager::initialize(nullptr, std::move(config));
+ *
+ * // 3. 获取实例并调用方法
+ * auto& manager = AIAssistantManager::getInstance();
+ * manager.obtainDeviceInformation();  // 会自动调用 getGateWay() -> dataReport()
+ *
+ * 日志输出：
+ * - 启动日志（表明测试开始）
+ * - 时间同步日志
+ * - SDK 初始化日志
+ * - 设备注册日志
+ * - 网关配置日志
+ * - 数据上报日志
+ * - 定时时间输出（每10秒）
+ *
+ * 注意事项：
+ * - 在实际设备上运行前，需要配置正确的 productId 和 productKey
+ * - 需要先连接 WiFi（时间同步和网络通信需要）
+ * - 栈大小设置为 8192，确保有足够的内存用于证书和网络操作
+ */
 extern "C" void test_ai_sdk_functions(void)
 {
-    ESP_LOGI(TAG, "Starting AI-SDK Test...");
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "Starting AI-SDK Test (Android Compatible)");
+    ESP_LOGI(TAG, "========================================");
 
-    // 等待 Wi-Fi 连接（实际使用时需要先连接 Wi-Fi）
-    //vTaskDelay(pdMS_TO_TICKS(5000));
-
-    // 启动SNTP时间同步（在测试前确保时间准确）
-    // 创建时间同步任务，栈大小4096，优先级4
-    // xTaskCreate(sntp_sync_task, "sntp_sync", 4096, NULL, 4, NULL);
-
-    // =========================================
-    // 等待SNTP时间同步完成
-    // =========================================
-    // 使用轮询方式检查同步状态
-    // 参数：10秒超时，每500ms检查一次
-    //bool sync_ok = wait_for_sntp_sync(10000, 500);
-
-    // 根据同步结果打印不同信息
-    /* if (sync_ok) {
-        ESP_LOGI(TAG, "✅ 时间同步完成，开始AI-SDK测试");
-    } else {
-        ESP_LOGW(TAG, "⚠️ 时间同步失败，但仍继续测试（时间戳可能不准确）");
-    } */
-    // =========================================
-
-    // 打印当前时间（同步后的时间，如果同步成功）
+    // 打印当前时间（用于验证时间同步）
     print_current_time();
+    ESP_LOGI(TAG, "Current time printed");
 
+    // ========================================
+    // 创建测试任务
+    // ========================================
+    // 栈大小设置为 8192 字节的原因：
+    // 1. SSL/TLS 握手需要大量内存
+    // 2. JSON 解析需要额外栈空间
+    // 3. 网络缓冲区分配
+    // 4. 回调函数调用链
+    ESP_LOGI(TAG, "Creating AI SDK test task (stack: 8192 bytes, priority: 5)");
+    xTaskCreate(ai_sdk_test_task, "ai_sdk_test", 8192, NULL, 5, NULL);
+    ESP_LOGI(TAG, "AI SDK test task created successfully");
 
-    // 在主任务中：
-    xTaskCreate(ai_sdk_test_task, "ai_sdk_test", 4096, NULL, 1, NULL);  // 低优先级
-
-    ESP_LOGI(TAG, "All tests initiated. Check logs for results.");
-
-    // 启动时间打印任务（每10秒输出一次当前时间）
+    // ========================================
+    // 创建时间打印任务（可选，用于监控）
+    // ========================================
+    // 每 10 秒打印一次当前时间，用于：
+    // 1. 验证时间同步是否正常
+    // 2. 检查系统是否正常运行
+    // 3. 监控任务调度
+    ESP_LOGI(TAG, "Creating time monitor task (stack: 2048 bytes, priority: 3)");
     xTaskCreate(time_print_task, "time_print", 2048, NULL, 3, NULL);
-    ESP_LOGI(TAG, "Periodic time output started (every 10 seconds)");
+    ESP_LOGI(TAG, "Time monitor task created successfully");
 
-    // 删除测试任务（测试已执行完成，资源可以释放）
-    // vTaskDelete(NULL);
+    // ========================================
+    // 测试启动完成
+    // ========================================
+    ESP_LOGI(TAG, "Test framework initialized. Check logs above for results.");
+    ESP_LOGI(TAG, "Expected log sequence:");
+    ESP_LOGI(TAG, "  1. Time synchronization");
+    ESP_LOGI(TAG, "  2. AI SDK initialization");
+    ESP_LOGI(TAG, "  3. Device registration (obtainDeviceInformation)");
+    ESP_LOGI(TAG, "  4. Gateway configuration (getGateWay)");
+    ESP_LOGI(TAG, "  5. Initial data report (dataReport)");
+    ESP_LOGI(TAG, "  6. Periodic time output (every 10 seconds)");
 }

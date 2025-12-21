@@ -1,9 +1,7 @@
 #pragma once
 
 #include "ai_sdk/types.h"
-#include "ai_sdk/gateway_client.h"
-#include "ai_sdk/device_client.h"
-#include "ai_sdk/report_client.h"
+#include "ai_sdk/gate_way.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -283,22 +281,24 @@ public:
      * 提供 Gateway 网关和设备接入实例
      *
      * 参考 Android 的 gateWayHelp() 实现。
-     * 每次调用返回同一个 GatewayClient 实例，提供网关相关的操作。
+     * 每次调用返回同一个 GateWay 实例，提供网关相关的操作。
      *
      * 网关功能包括：
      * - 获取网关配置
-     * - 管理代理设置
-     * - 处理网关认证
+     * - 获取设备信息
+     * - 数据上报
      *
-     * 设计模式：单例模式（GatewayClient 在管理器中是单例）
+     * 设计模式：单例模式（GateWay 在管理器中是单例）
      *
-     * @return GatewayClient 实例的引用
+     * @return GateWay 实例的引用
      *
      * 使用示例：
      * auto& gateway = manager.gateWayHelp();
      * gateway.getGateWay(onSuccess, onError);
+     * gateway.obtainDeviceInformation(onSuccess, onError);
+     * gateway.dataReport(request, onSuccess, onError);
      */
-    GatewayClient& gateWayHelp();
+    GateWay& gateWayHelp();
 
     /**
      * 提供 ASR 智能对话助手实例
@@ -413,6 +413,7 @@ private:
 
     std::unique_ptr<AIAssistConfig> config_;        ///< AI 助手配置
     void* context_;                                  ///< 应用上下文
+    GateWay gateWay_;                               ///< 网关对象
     bool initialized_;                              ///< 初始化标志位
     std::string lastError_;                         ///< 最后错误信息
 };
