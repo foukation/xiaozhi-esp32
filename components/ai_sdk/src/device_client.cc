@@ -1,6 +1,7 @@
 #include "ai_sdk/device_client.h"
 #include "ai_sdk/api_config.h"
 #include "ai_sdk/http_client.h"
+#include "ai_sdk/ai_assistant_manager.h"
 #include "cJSON.h"
 #include "esp_log.h"
 #include <cstdlib>
