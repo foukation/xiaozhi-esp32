@@ -177,14 +177,13 @@ static bool initialize_ai_sdk() {
 
     // 1. 创建配置（类似 Android 的 Builder）
     auto builder = std::make_unique<ai_sdk::AIAssistConfig::Builder>();
-    auto config = (builder
-        ->deviceNo("NNNP03900162")
-        ->deviceNoType("SN")
-        ->productId("1988782995351662594")
-        ->productKey("mRgQQjUgfBqRPLWH")
-        ->deviceId("")           // 初始为空，将从云端获取
-        ->deviceSecret("")       // 初始为空，将从云端获取
-        ->build());
+    auto config = builder->deviceNo("NNNP03900162")
+                          .deviceNoType("SN")
+                          .productId("1988782995351662594")
+                          .productKey("mRgQQjUgfBqRPLWH")
+                          .deviceId("")           // 初始为空，将从云端获取
+                          .deviceSecret("")       // 初始为空，将从云端获取
+                          .build();
 
     // 2. 初始化管理器（关键！类似 Android initialize）
     ai_sdk::AIAssistantManager::initialize(nullptr, std::move(config));
