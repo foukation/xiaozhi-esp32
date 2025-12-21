@@ -371,6 +371,18 @@ public:
      */
     void changeTtsConfig(const std::string& config);
 
+    /**
+     * 获取配置对象的常量引用
+     *
+     * 为其他类（如 GateWay）提供对配置的只读访问
+     * 保持封装性的同时允许必要的内部访问
+     *
+     * @return AIAssistConfig 的常量引用
+     */
+    const AIAssistConfig& config() const {
+        return *config_;
+    }
+
     // ===== 工作流方法（Android 内部实现，保持私有）=====
 
 private:
