@@ -177,14 +177,14 @@ static bool initialize_ai_sdk() {
 
     // 1. 创建配置（类似 Android 的 Builder）
     auto builder = std::make_unique<ai_sdk::AIAssistConfig::Builder>();
-    auto config = builder
+    auto config = (builder
         ->deviceNo("NNNP03900162")
         ->deviceNoType("SN")
         ->productId("1988782995351662594")
         ->productKey("mRgQQjUgfBqRPLWH")
         ->deviceId("")           // 初始为空，将从云端获取
         ->deviceSecret("")       // 初始为空，将从云端获取
-        ->build();
+        ->build());
 
     // 2. 初始化管理器（关键！类似 Android initialize）
     ai_sdk::AIAssistantManager::initialize(nullptr, std::move(config));
@@ -198,55 +198,6 @@ static bool initialize_ai_sdk() {
         ESP_LOGE(TAG, "Failed to get AI SDK instance: %s", e.what());
         return false;
     }
-}
-
-/**
- * @brief 测试设备信息获取（通过 GateWay）
- *
- * 通过 gateWayHelp() 访问网关对象，然后调用 obtainDeviceInformation()
- * 这与 Android 的调用方式完全一致：manager.gateWayHelp().obtainDeviceInformation()
- *
- * 重要说明：
- * - 不能直接调用 g_manager->obtainDeviceInformation()（该方法已在 AIAssistantManager 中删除）
- * - 必须通过 gateWayHelp() 访问 GateWay 对象
- * - 回调函数处理成功和错误情况
- *
- * 参考 Android: manager.gateWayHelp().obtainDeviceInformation(onSuccess, onError)
- */
-static void test_device_information() {
-    ESP_LOGI(TAG, "=== Testing Device Information ===");
-
-    if (!g_manager) {
-        ESP_LOGE(TAG, "AI SDK not initialized!");
-        return;
-    }
-
-    // 通过 gateWayHelp() 调用 obtainDeviceInformation()
-    // 这与 Android 的调用方式完全一致
-    g_manager->gateWayHelp().obtainDeviceInformation(
-        [](const ai_sdk::DeviceInfoResponse& response) {
-            ESP_LOGI(TAG, "Device info success:");
-            ESP_LOGI(TAG, "  Status: %d", response.status);
-            ESP_LOGI(TAG, "  Device ID: %s", response.data.deviceId.c_str());
-            ESP_LOGI(TAG, "  Device Secret: %s", response.data.deviceSecret.c_str());
-
-        // 测试 2: 网关访问（手动调用）
-        ESP_LOGI(TAG, "Test 2: Gateway Access");
-        test_gateway_access();
-        vTaskDelay(pdMS_TO_TICKS(3000));
-
-        // 测试 3: 数据上报（手动调用）
-        ESP_LOGI(TAG, "Test 3: Data Report");
-        test_data_report();
-        vTaskDelay(pdMS_TO_TICKS(3000));
-
-        },
-        [](const std::string& error) {
-            ESP_LOGE(TAG, "Device info error: %s", error.c_str());
-        }
-    );
-
-    ESP_LOGI(TAG, "Device information request sent, check logs for results");
 }
 
 /**
@@ -308,6 +259,56 @@ static void test_data_report() {
         }
     );
 }
+
+/**
+ * @brief 测试设备信息获取（通过 GateWay）
+ *
+ * 通过 gateWayHelp() 访问网关对象，然后调用 obtainDeviceInformation()
+ * 这与 Android 的调用方式完全一致：manager.gateWayHelp().obtainDeviceInformation()
+ *
+ * 重要说明：
+ * - 不能直接调用 g_manager->obtainDeviceInformation()（该方法已在 AIAssistantManager 中删除）
+ * - 必须通过 gateWayHelp() 访问 GateWay 对象
+ * - 回调函数处理成功和错误情况
+ *
+ * 参考 Android: manager.gateWayHelp().obtainDeviceInformation(onSuccess, onError)
+ */
+static void test_device_information() {
+    ESP_LOGI(TAG, "=== Testing Device Information ===");
+
+    if (!g_manager) {
+        ESP_LOGE(TAG, "AI SDK not initialized!");
+        return;
+    }
+
+    // 通过 gateWayHelp() 调用 obtainDeviceInformation()
+    // 这与 Android 的调用方式完全一致
+    g_manager->gateWayHelp().obtainDeviceInformation(
+        [](const ai_sdk::DeviceInfoResponse& response) {
+            ESP_LOGI(TAG, "Device info success:");
+            ESP_LOGI(TAG, "  Status: %d", response.status);
+            ESP_LOGI(TAG, "  Device ID: %s", response.data.deviceId.c_str());
+            ESP_LOGI(TAG, "  Device Secret: %s", response.data.deviceSecret.c_str());
+
+        // 测试 2: 网关访问（手动调用）
+        ESP_LOGI(TAG, "Test 2: Gateway Access");
+        test_gateway_access();
+        vTaskDelay(pdMS_TO_TICKS(3000));
+
+        // 测试 3: 数据上报（手动调用）
+        ESP_LOGI(TAG, "Test 3: Data Report");
+        test_data_report();
+        vTaskDelay(pdMS_TO_TICKS(3000));
+
+        },
+        [](const std::string& error) {
+            ESP_LOGE(TAG, "Device info error: %s", error.c_str());
+        }
+    );
+
+    ESP_LOGI(TAG, "Device information request sent, check logs for results");
+}
+
 
 /**
  * @brief 定时打印当前时间的任务
