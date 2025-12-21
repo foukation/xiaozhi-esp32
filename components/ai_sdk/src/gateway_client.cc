@@ -33,6 +33,9 @@ static const char* TAG = "GatewayClient";
  * @param onError 错误回调
  */
 void GatewayClient::getGateWay(GatewayCallback onSuccess, std::function<void(const std::string&)> onError) {
+    // 输出API调用日志（与Android RequestApi保持一致）
+    ESP_LOGI(TAG, "API: getGateWay");
+
     // 设置请求头
     std::map<std::string, std::string> headers;
     headers["Content-Type"] = "application/json; charset=utf-8";
@@ -45,10 +48,14 @@ void GatewayClient::getGateWay(GatewayCallback onSuccess, std::function<void(con
         std::string(ApiConfig::TERMINAL_INTELLIGENT_SERVICE_PLATFORM_BASE_URL) + ApiConfig::GATEWAY_API,
         headers,
         [this, onSuccess](const std::string& response) {
+            // 输出响应日志（与Android RequestApi保持一致）
+            ESP_LOGI(TAG, "response: %s", response.c_str());
             // 请求成功，解析响应
             onResponse(response, onSuccess, nullptr);
         },
         [this, onError](const std::string& error) {
+            // 输出错误日志（与Android RequestApi保持一致）
+            ESP_LOGE(TAG, "error: %s", error.c_str());
             // 请求失败，调用错误回调
             onError(error);
         }

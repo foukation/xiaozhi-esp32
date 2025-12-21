@@ -28,6 +28,9 @@ void DeviceClient::obtainDeviceInformation(
     DeviceInfoSuccessCallback onSuccess,
     DeviceInfoErrorCallback onError
 ) {
+    // 输出API调用日志（与Android RequestApi保持一致）
+    ESP_LOGI(TAG, "API: obtainDeviceInformation");
+
     // 构建JSON请求体
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "deviceNoType", request.deviceNoType.c_str());  // 设备号类型
@@ -46,6 +49,9 @@ void DeviceClient::obtainDeviceInformation(
     headers["Content-Type"] = "application/json; charset=utf-8";
     // TODO: Add sign, deviceNo, productId, productKey, ts, deviceId headers
     // 需要设备密钥来生成签名，参考Android版本的createAIServerHeaders()
+
+    // 输出请求参数日志（与Android OkHttpManager保持一致）
+    ESP_LOGI(TAG, "request params: %s", jsonBody.c_str());
 
     // 发送HTTP POST请求获取设备信息
     HTTPClient http_client;

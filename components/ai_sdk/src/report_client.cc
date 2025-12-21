@@ -57,6 +57,9 @@ void ReportClient::dataReport(
     free(jsonStr);  // 释放cJSON分配的内存
     cJSON_Delete(root);  // 释放JSON对象
 
+    // 输出请求参数日志（与Android OkHttpManager保持一致）
+    ESP_LOGI(TAG, "request params: %s", jsonBody.c_str());
+
     // 创建请求头
     std::map<std::string, std::string> headers;
     headers["Content-Type"] = "application/json; charset=utf-8";

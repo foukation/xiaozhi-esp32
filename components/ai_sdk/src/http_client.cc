@@ -19,6 +19,7 @@ esp_err_t HTTPClient::http_event_handler(esp_http_client_event_t *evt) {
             // 内存管理：使用智能指针后，不再需要手动 delete ctx
             // ctx 的生命周期由 shared_ptr 自动管理
             ESP_LOGE(TAG, "HTTP_EVENT_ERROR");
+            // 输出错误日志（与Android OkHttpManager保持一致）
             if (ctx->on_error) {
                 ctx->on_error("HTTP_EVENT_ERROR");
             }
@@ -47,8 +48,9 @@ esp_err_t HTTPClient::http_event_handler(esp_http_client_event_t *evt) {
             // HTTP请求完成
             // 内存管理：使用智能指针后，不再需要手动 delete ctx
             // ctx 的生命周期由 shared_ptr 自动管理
-            // 调用成功回调并传递完整响应
             ESP_LOGI(TAG, "HTTP_EVENT_ON_FINISH");
+            // 输出响应日志（与Android OkHttpManager保持一致）
+            ESP_LOGI(TAG, "response: %s", ctx->response_data.c_str());
             if (ctx->on_success) {
                 ctx->on_success(ctx->response_data);
             }
@@ -158,6 +160,14 @@ void HTTPClient::post(
     ResponseCallback onSuccess,
     ErrorCallback onError
 ) {
+    // 输出HTTP请求日志（与Android OkHttpManager保持一致）
+    ESP_LOGI(TAG, "request httpUrl: %s", url.c_str());
+    ESP_LOGI(TAG, "request headers:");
+    for (const auto& header : headers) {
+        ESP_LOGI(TAG, "  %s: %s", header.first.c_str(), header.second.c_str());
+    }
+    ESP_LOGI(TAG, "request params: %s", body.c_str());
+
     // 创建HTTP请求上下文，使用智能指针自动管理生命周期
     // 内存管理优化：
     // - 使用 shared_ptr 避免手动 delete 导致的重复释放问题
