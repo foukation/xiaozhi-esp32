@@ -290,25 +290,4 @@ void GateWay::onReportResponse(const std::string& response,
     }
 }
 
-void GateWay::onError(const std::string& error, DeviceInfoErrorCallback callback) {
-    ESP_LOGE(TAG, "Error: %s", error.c_str());
-    if (callback) {
-        callback(error);
-    }
-}
-
-void GateWay::onError(const std::string& error, GatewayErrorCallback callback) {
-    ESP_LOGE(TAG, "Error: %s", error.c_str());
-    if (callback) {
-        callback(error);
-    }
-}
-
-void GateWay::onError(const std::string& error, ReportErrorCallback callback) {
-    ESP_LOGE(TAG, "Error: %s", error.c_str());
-    if (callback) {
-        callback(error);
-    }
-}
-
 } // namespace ai_sdk

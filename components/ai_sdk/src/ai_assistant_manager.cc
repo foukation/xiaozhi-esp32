@@ -294,32 +294,4 @@ void AIAssistantManager::changeTtsConfig(const std::string& config) {
     }
 }
 
-/**
- * @brief 创建新的会话
- *
- * 参考 Android 的 newSession() 实现。
- * 用于开始一个新的交互会话。
- *
- * 在 Android 中，这会创建新的 AIFoundationKit 实例。
- * 在 ESP32 中，仅记录日志，因为基础套件未实现。
- *
- * 执行操作：
- * 1. 记录会话创建日志
- * 2. 尝试创建 AIFoundationKit 实例（返回 nullptr）
- * 3. 记录调试信息
- */
-void AIAssistantManager::newSession() {
-    ESP_LOGI(TAG, "Creating new AI session...");
-
-    // 参考 Android 实现，尝试获取 AI 基础套件
-    void* kit = aiFoundationKit();
-
-    if (kit) {
-        // 理论上不会执行到这里，因为 aiFoundationKit() 返回 nullptr
-        ESP_LOGI(TAG, "New AI session created successfully");
-    } else {
-        ESP_LOGW(TAG, "AIFoundationKit not available on ESP32, creating stub session");
-    }
-}
-
 } // namespace ai_sdk

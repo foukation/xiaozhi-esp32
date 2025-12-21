@@ -165,10 +165,9 @@ public:
      */
     std::string ttsConfig;         ///< TTS 配置字符串
 
-private:
     /**
-     * 私有构造函数
-     * 只能通过 Builder 创建实例
+     * 构造函数
+     * Builder 中需要调用 make_unique<AIAssistConfig>()
      */
     AIAssistConfig()
         : enableGateway(true), context(nullptr) {}

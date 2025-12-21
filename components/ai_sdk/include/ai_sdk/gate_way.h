@@ -107,18 +107,6 @@ private:
     void onReportResponse(const std::string& response,
                           ReportSuccessCallback onSuccess,
                           ReportErrorCallback onError);
-
-    /**
-     * 错误处理回调
-     */
-    void onError(const std::string& error,
-                 DeviceInfoErrorCallback callback);
-
-    void onError(const std::string& error,
-                 GatewayErrorCallback callback);
-
-    void onError(const std::string& error,
-                 ReportErrorCallback callback);
 };
 
 } // namespace ai_sdk
