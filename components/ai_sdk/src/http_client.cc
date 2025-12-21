@@ -86,6 +86,13 @@ void HTTPClient::get(
     ResponseCallback onSuccess,
     ErrorCallback onError
 ) {
+    // 输出HTTP请求日志（与Android OkHttpManager保持一致）
+    ESP_LOGI(TAG, "request httpUrl: %s", url.c_str());
+    ESP_LOGI(TAG, "request headers:");
+    for (const auto& header : headers) {
+        ESP_LOGI(TAG, "  %s: %s", header.first.c_str(), header.second.c_str());
+    }
+
     // 创建HTTP请求上下文，使用智能指针自动管理生命周期
     // 内存管理优化：
     // - 使用 shared_ptr 避免手动 delete 导致的重复释放问题
