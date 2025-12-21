@@ -92,38 +92,47 @@ void GateWay::getGateWay(
  *
  * 设备通过产品信息及设备号从云端获取设备信息，前提是设备号已录入到云端平台。
  *
- * 实现说明（关键设计点）：
- * 这是方案 A 中最复杂的转发调用，因为需要构建请求参数。
- * 与 getGateWay() 和 dataReport() 不同，obtainDeviceInformation() 需要多个参数。
+ * 实现说明（与 Android 保持一致的关键修改）：
+ * 这是从 Client 获取配置的第 2 步：删除成员变量，每次从 AIAssistantManager 获取。
  *
- * 参数获取的挑战和解决方案：
- * - 问题：DeviceClient::obtainDeviceInformation() 需要 DeviceInfoRequest 参数
- * -       DeviceInfoRequest 包含 deviceNo、productId、productKey、deviceNoType
- * -       这些信息保存在 AIAssistConfig 中，而 GateWay 没有直接访问权限
- * - 解决方案：在 AIAssistantManager 初始化时调用 gateWay_.setConfig(config_.get())
- * -             这样 GateWay 就保存了 AIAssistConfig 的指针
+ * 设计演进：
+ * - 第 1 版（错误）：GateWay 通过成员变量保存配置指针
+ *   - 问题：与 Android 设计不一致，增加了 GateWay 的状态
+ *   - 问题：需要 setConfig() 方法，API 不统一
+ * - 第 2 版（当前）：每次从 AIAssistantManager::getInstance() 获取配置
+ *   - 与 Android 完全一致：Android 的 RequestApi 也是从 AIAssistantManager 获取配置
+ *   - 优势：GateWay 完全无状态，职责单一（只做转发）
+ *   - 优势：不需要 setConfig()，减少了 API 和初始化步骤
+ *
+ * 与 Android 的对比：
+ * Android (Kotlin):
+ *   fun obtainDeviceInformation(onSuccess, onError) {
+ *       val deviceInfoRequest = DeviceInfoRequest(
+ *           deviceNoType = AIAssistantManager.getInstance().aiAssistConfig.deviceNoType,
+ *           deviceNo = AIAssistantManager.getInstance().aiAssistConfig.deviceNo,
+ *           ...
+ *       )
+ *       // 发送请求...
+ *   }
+ *
+ * ESP32 (C++):
+ *   void obtainDeviceInformation(onSuccess, onError) {
+ *       DeviceInfoRequest request;
+ *       request.deviceNoType = AIAssistantManager::getInstance().config().deviceNoType;
+ *       request.deviceNo = AIAssistantManager::getInstance().config().deviceNo;
+ *       // 发送请求...
+ *   }
+ *
+ * 两者核心一致：都从中央管理器（AIAssistantManager）获取配置，而不是存储在成员变量中。
  *
  * 转发流程：
- * 1. 检查 config_ 是否已设置（调试时非常重要）
- * 2. 从 config_ 中提取设备信息和产品信息
+ * 1. 从 AIAssistantManager::getInstance().config() 获取配置（每次调用都获取）
+ * 2. 从配置中提取设备信息和产品信息
  * 3. 构建 DeviceInfoRequest 对象（栈上分配）
  * 4. 创建 DeviceClient 实例（栈上分配，自动销毁）
  * 5. 调用 client.obtainDeviceInformation(request, onSuccess, onError)
  * 6. Client 处理所有网络请求、解析响应、错误重试等复杂逻辑
  * 7. 结果通过 onSuccess/onError 回调返回给调用者
- *
- * 与 Android 实现的比较：
- * - Android: manager.obtainDeviceInformation()
- *   - Android 的 GateWay 可以通过内部机制访问配置
- *   - 调用者不需要传递任何参数
- * - ESP32: manager.gateWayHelp().obtainDeviceInformation()
- *   - 我们保持了一致的 API 设计（无参数调用）
- *   - 通过 setConfig() 在初始化时传递配置
- *   - 保持了与 Android 的 API 兼容性
- *
- * 参数验证：
- * 如果 config_ 为 nullptr（理论上不应该发生，除非漏掉 setConfig 调用），
- * 立即调用 onError 回调而不是崩溃，这是异步编程的最佳实践。
  *
  * 使用回调函数来处理成功和错误的情况
  *
@@ -136,28 +145,22 @@ void GateWay::obtainDeviceInformation(
 ) {
     ESP_LOGI(TAG, "Obtaining device information...");
 
-    // 参数验证：检查配置是否已设置
-    // 这是一个防御性编程的好习惯，虽然理论上 config_ 不应该为 nullptr
-    if (!config_) {
-        ESP_LOGE(TAG, "config_ is nullptr in obtainDeviceInformation()");
-        ESP_LOGE(TAG, "Did you forget to call setConfig()?");
-        if (onError) {
-            onError("GateWay not configured. Call setConfig() first.");
-        }
-        return;  // 提前返回，避免继续执行导致崩溃
-    }
+    // 从 AIAssistantManager 获取配置（关键修改点）
+    // 与 Android 保持一致：每次调用都从 AIAssistantManager 获取，不存储成员变量
+    // 这样做的好处：
+    // 1. GateWay 完全无状态，职责单一（只做转发）
+    // 2. 与 Android 设计完全一致
+    // 3. 不需要 setConfig() 方法，减少 API 复杂度
+    const auto& config = AIAssistantManager::getInstance().config();
 
     // 从配置构建请求参数
-    // 这是关键步骤：ESP32 与 Android 的区别在这里
-    // Android 的 GateWay 可以直接访问配置，但 ESP32 需要显式传递
-    // 通过 setConfig()，我们已经保存了 AIAssistConfig 的指针，现在可以访问它
     DeviceInfoRequest request;
-    request.deviceNoType = config_->deviceNoType;  // 设备号类型（如 "SN"）
-    request.deviceNo = config_->deviceNo;          // 设备序列号
-    request.productId = config_->productId;        // 产品 ID（从云端平台获得）
-    request.productKey = config_->productKey;      // 产品密钥（从云端平台获得）
+    request.deviceNoType = config.deviceNoType;  // 设备号类型（如 "SN"）
+    request.deviceNo = config.deviceNo;          // 设备序列号
+    request.productId = config.productId;        // 产品 ID（从云端平台获得）
+    request.productKey = config.productKey;      // 产品密钥（从云端平台获得）
 
-    ESP_LOGI(TAG, "Building DeviceInfoRequest from config:");
+    ESP_LOGI(TAG, "Building DeviceInfoRequest from AIAssistantManager::config():");
     ESP_LOGI(TAG, "  deviceNoType: %s", request.deviceNoType.c_str());
     ESP_LOGI(TAG, "  deviceNo: %s", request.deviceNo.c_str());
     ESP_LOGI(TAG, "  productId: %s", request.productId.c_str());
