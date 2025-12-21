@@ -324,18 +324,6 @@ public:
     void* asrIntelligentDialogueHelp();
 
     /**
-     * 提供 ASR 智能对话（会话版本）实例
-     *
-     * 参考 Android 的 asrIntelligentConversationHelp() 实现。
-     * 支持多轮对话的 ASR 功能。
-     *
-     * ESP32 实现：返回 nullptr，功能未实现
-     *
-     * @return 对话实例指针，ESP32 上返回 nullptr
-     */
-    void* asrIntelligentConversationHelp();
-
-    /**
      * 提供 ASR 翻译帮助实例
      *
      * 参考 Android 的 asrTranslationHelp() 实现。
@@ -374,88 +362,7 @@ public:
      */
     void changeTtsConfig(const std::string& config);
 
-    /**
-     * 创建一个新的会话
-     *
-     * 参考 Android 的 newSession() 实现。
-     * 用于开始一个新的交互会话。
-     *
-     * 在 Android 中，这会创建新的 AIFoundationKit 实例
-     * 在 ESP32 中，仅记录日志，因为基础套件未实现
-     *
-     * 使用场景：
-     * - 用户开始新的对话
-     * - 需要重置上下文时
-     * - 切换功能模块时
-     */
-    void newSession();
-
     // ===== 工作流方法（Android 内部实现，保持私有）=====
-
-    /**
-     * 获取设备信息
-     *
-     * 参考 Android 的 obtainDeviceInformation() 实现。
-     *
-     * 工作流程：
-     * 1. 构建设备信息请求
-     * 2. 调用 DeviceClient 进行设备注册
-     * 3. 注册成功后自动调用 getGateWay()
-     * 4. 然后自动调用 dataReport()
-     *
-     * 错误处理：
-     * - 记录详细错误日志
-     * - 更新内部错误状态
-     * - 不会抛出异常（异步设计）
-     *
-     * 注意事项：
-     * - 必须在 initialize() 之后调用
-     * - 是启动流程的第一步
-     *
-     * 使用示例：
-     * manager.obtainDeviceInformation();
-     */
-    void obtainDeviceInformation();
-
-    /**
-     * 获取网关信息
-     *
-     * 参考 Android 的 getGateWay() 实现。
-     * 从云端获取网关配置，包括代理服务器地址和认证令牌。
-     *
-     * 调用时机：设备信息获取成功后自动调用
-     *
-     * 成功回调：记录日志并更新配置
-     * 错误回调：记录错误信息
-     *
-     * 网关功能：
-     * - 提供代理服务器地址
-     * - 提供认证令牌
-     * - 设置代理使用状态
-     */
-    void getGateWay();
-
-    /**
-     * 执行设备参数采集上报
-     *
-     * 参考 Android 的 dataReport() 实现。
-     *
-     * 功能说明：
-     * - 心跳接口，定时向云端发送消息
-     * - 设备至少每24小时上报一次，更新最后活动时间
-     * - 上报间隔12小时，带随机偏移量避免服务器压力
-     *
-     * 上报策略：
-     * 1. 设备首次启动时上报
-     * 2. 计算下次上报时间：T_next = T_current + 12小时 + 随机偏移量(-15到+15分钟)
-     * 3. 调度上报任务
-     *
-     * 数据内容：
-     * - 设备ID、产品ID等身份信息
-     * - SDK版本号
-     * - 自定义参数
-     */
-    void dataReport();
 
 private:
     /**
@@ -498,75 +405,6 @@ private:
      */
     void initWithConfig();
 
-    /**
-     * 设备注册成功回调
-     *
-     * 参考 Android 回调流程。
-     *
-     * 成功处理：
-     * 1. 更新设备ID和密钥
-     * 2. 打印成功日志
-     * 3. 自动调用 getGateWay()
-     * 4. 自动调用 dataReport()
-     *
-     * @param response 设备注册响应
-     */
-    void onDeviceInfoResponse(const DeviceInfoResponse& response);
-
-    /**
-     * 设备注册失败回调
-     *
-     *
-     * 错误处理：
-     * - 记录错误日志
-     * - 保存错误信息
-     * - 不会自动重试（由上层应用决定）
-     *
-     * @param error 错误信息
-     */
-    void onDeviceInfoError(const std::string& error);
-
-    /**
-     * 网关配置成功回调
-     *
-     * 成功处理：
-     * - 记录响应日志
-     * - 如果启用代理，记录代理地址
-     *
-     * @param info 网关信息
-     * @param empty 空字符串，保持与 Android 兼容
-     */
-    void onGatewayResponse(const GatewayInfo& info, const std::string& empty);
-
-    /**
-     * 网关配置失败回调
-     *
-     * 错误处理：
-     * - 记录错误日志
-     * - 保存错误信息
-     *
-     * @param error 错误信息
-     */
-    void onGatewayError(const std::string& error);
-
-    /**
-     * 动态加载类
-     *
-     * 参考 Android 的 Class.forName() 反射机制。
-     *
-     * ESP32 不支持 Java/Kotlin 的反射机制，因此此方法是 stub 实现。
-     * 它只会记录日志并返回 nullptr，但保持 API 一致性。
-     *
-     * @param className 完整的类名
-     * @return 实例指针，ESP32 上始终返回 nullptr
-     *
-     * 注意事项：
-     * - ESP32 不支持运行时动态加载类
-     * - 此方法仅用于保持与 Android API 的兼容性
-     * - 如果需要类似功能，需要在编译时静态链接
-     */
-    void* loadClass(const std::string& className);
-
     // ===== 静态成员 =====
 
     static AIAssistantManager* instance_;           ///< 单例唯一实例
@@ -575,9 +413,6 @@ private:
 
     std::unique_ptr<AIAssistConfig> config_;        ///< AI 助手配置
     void* context_;                                  ///< 应用上下文
-    GatewayClient gatewayClient_;                   ///< 网关客户端（单例）
-    DeviceClient deviceClient_;                     ///< 设备客户端（单例）
-    ReportClient reportClient_;                     ///< 上报客户端（单例）
     bool initialized_;                              ///< 初始化标志位
     std::string lastError_;                         ///< 最后错误信息
 };
