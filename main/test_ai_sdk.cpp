@@ -419,19 +419,9 @@ void ai_sdk_test_task(void* arg) {
     test_data_report();
     vTaskDelay(pdMS_TO_TICKS(3000));
 
-    // 测试 4: 定时上报（可选）
-//    ESP_LOGI(TAG, "Test 4: Periodic Report");
-//    test_periodic_report();
-//    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    // ============================================
-    // 步骤 4: 测试单独的功能（可选）
-    // ============================================
     // 这些功能也可以手动调用，用于调试或特殊场景
     // 注释掉的部分可以根据需要启用
     ESP_LOGI(TAG, "Optional individual feature tests (commented out)");
-
-    // test_periodic_report();     // 测试定时上报
 
     // ============================================
     // 测试完成
