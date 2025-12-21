@@ -126,6 +126,25 @@ void DeviceClient::onResponse(const std::string& response, DeviceInfoSuccessCall
     // 释放JSON对象内存
     cJSON_Delete(root);
 
+    // 如果成功获取设备信息，自动更新AIAssistantManager的配置
+    // 与Android版本保持一致：在RequestApi中直接更新aiAssistConfig
+    if (deviceInfoResponse.status == 0) {  // ResCode.SUC.alias = 0
+        if (!deviceInfoResponse.data.deviceId.empty() &&
+            !deviceInfoResponse.data.deviceSecret.empty()) {
+
+            // 获取AIAssistantManager的可变配置引用
+            auto& config = AIAssistantManager::getInstance().config();
+
+            // 直接赋值更新设备认证信息
+            config.deviceId = deviceInfoResponse.data.deviceId;
+            config.deviceSecret = deviceInfoResponse.data.deviceSecret;
+
+            ESP_LOGI(TAG, "Device configuration updated in AIAssistantManager:");
+            ESP_LOGI(TAG, "  deviceId: %s", deviceInfoResponse.data.deviceId.c_str());
+            // 出于安全考虑，不打印deviceSecret到日志
+        }
+    }
+
     // 调用成功回调
     if (onSuccess) {
         onSuccess(deviceInfoResponse);

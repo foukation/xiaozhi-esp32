@@ -376,10 +376,29 @@ public:
      *
      * 为其他类（如 GateWay）提供对配置的只读访问
      * 保持封装性的同时允许必要的内部访问
+     * 当对象是const时会调用此方法
      *
      * @return AIAssistConfig 的常量引用
      */
     const AIAssistConfig& config() const {
+        return *config_;
+    }
+
+    /**
+     * 获取配置对象的可变引用
+     *
+     * 提供对配置的读写访问，用于在运行时更新配置参数
+     * 典型场景：设备注册成功后更新deviceId和deviceSecret
+     * 当对象是非const时会调用此方法（函数重载）
+     *
+     * 使用示例：
+     * auto& config = AIAssistantManager::getInstance().config();
+     * config.deviceId = "new_device_id";
+     * config.deviceSecret = "new_device_secret";
+     *
+     * @return AIAssistConfig 的可变引用
+     */
+    AIAssistConfig& config() {
         return *config_;
     }
 
