@@ -86,7 +86,24 @@ public:
         ReportErrorCallback onError
     );
 
+    /**
+     * 设置 AI 助手配置指针
+     *
+     * 提供对 AIAssistConfig 的访问，使得 GateWay 可以获取设备信息和认证参数。
+     * 这是 ESP32 实现与 Android 设计的一个差异点：
+     * 在 Android 中，GateWay 可以通过内部机制访问配置；
+     * 在 ESP32 中，我们需要显式地传递配置指针。
+     *
+     * 调用时机：在 AIAssistantManager 初始化时自动调用
+     *
+     * @param config AI 助手配置指针，GateWay 保存指针但不拥有所有权
+     */
+    void setConfig(AIAssistConfig* config) {
+        config_ = config;
+    }
+
 private:
+    AIAssistConfig* config_ = nullptr;  ///< AI助手配置，通过 setConfig 设置
     /**
      * HTTP响应处理回调 - 设备信息
      */

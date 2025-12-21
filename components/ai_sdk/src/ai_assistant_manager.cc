@@ -172,6 +172,13 @@ void AIAssistantManager::initWithConfig() {
     ESP_LOGI(TAG, "  Device No: %s", config_->deviceNo.c_str());
     ESP_LOGI(TAG, "  Gateway enabled: %s", config_->enableGateway ? "yes" : "no");
 
+    // 配置 GateWay 对象
+    // 这是 ESP32 实现的关键：GateWay 需要访问配置信息来获取 deviceNo、productId 等参数
+    // 将 config_ 的裸指针传递给 GateWay，GateWay 保存但不拥有该指针
+    // 生命周期说明：config_ 在 AIAssistantManager 销毁时释放，GateWay 应该在 AIAssistantManager 之前销毁
+    gateWay_.setConfig(config_.get());
+    ESP_LOGI(TAG, "GateWay configured with AIAssistConfig");
+
     // 标记初始化完成
     initialized_ = true;
     ESP_LOGI(TAG, "AIAssistantManager internal components initialized");
