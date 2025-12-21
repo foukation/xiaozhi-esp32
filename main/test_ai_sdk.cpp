@@ -229,6 +229,17 @@ static void test_device_information() {
             ESP_LOGI(TAG, "  Status: %d", response.status);
             ESP_LOGI(TAG, "  Device ID: %s", response.data.deviceId.c_str());
             ESP_LOGI(TAG, "  Device Secret: %s", response.data.deviceSecret.c_str());
+
+        // 测试 2: 网关访问（手动调用）
+        ESP_LOGI(TAG, "Test 2: Gateway Access");
+        test_gateway_access();
+        vTaskDelay(pdMS_TO_TICKS(3000));
+
+        // 测试 3: 数据上报（手动调用）
+        ESP_LOGI(TAG, "Test 3: Data Report");
+        test_data_report();
+        vTaskDelay(pdMS_TO_TICKS(3000));
+
         },
         [](const std::string& error) {
             ESP_LOGE(TAG, "Device info error: %s", error.c_str());
@@ -407,16 +418,6 @@ void ai_sdk_test_task(void* arg) {
     // 测试 1: 设备信息获取（通过 gateWayHelp）
     ESP_LOGI(TAG, "Test 1: Device Information");
     test_device_information();
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    // 测试 2: 网关访问（手动调用）
-    ESP_LOGI(TAG, "Test 2: Gateway Access");
-    test_gateway_access();
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    // 测试 3: 数据上报（手动调用）
-    ESP_LOGI(TAG, "Test 3: Data Report");
-    test_data_report();
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     // 这些功能也可以手动调用，用于调试或特殊场景
