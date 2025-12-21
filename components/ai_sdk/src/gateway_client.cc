@@ -1,6 +1,7 @@
 #include "ai_sdk/gateway_client.h"
 #include "ai_sdk/api_config.h"
 #include "ai_sdk/http_client.h"
+#include "ai_sdk/ai_assistant_manager.h"
 #include "cJSON.h"
 #include "esp_log.h"
 
@@ -26,8 +27,10 @@ static const char* TAG = "GatewayClient";
  *   - ApiConfig::apiToken = 认证令牌
  * - 后续的所有API请求会自动走代理
  *
- * TODO: 需要添加设备认证请求头（X-AI-VID、X-AI-UID等）
- * 参考Android版本的createGateWayHeaders()
+ * 认证headers：
+ * - 请求中会添加设备认证信息，与Android保持一致：
+ *   - X-AI-VID: 产品ID (从AIAssistantManager获取)
+ *   - X-AI-UID: 设备ID (从AIAssistantManager获取)
  *
  * @param onSuccess 成功回调，返回网关配置
  * @param onError 错误回调
@@ -36,11 +39,19 @@ void GatewayClient::getGateWay(GatewayCallback onSuccess, std::function<void(con
     // 输出API调用日志（与Android RequestApi保持一致）
     ESP_LOGI(TAG, "API: getGateWay");
 
-    // 设置请求头
+    // 设置请求头 - 与Android createGateWayHeaders()保持一致
     std::map<std::string, std::string> headers;
     headers["Content-Type"] = "application/json; charset=utf-8";
-    // TODO: Add X-AI-VID and X-AI-UID headers when device info is available
-    // TODO: 需要添加设备认证信息，参考Android版本的createGateWayHeaders()
+
+    // 添加设备认证headers - 与Android保持一致
+    // 从AIAssistantManager获取设备配置
+    const auto& config = AIAssistantManager::getInstance().config();
+    if (!config.productId.empty()) {
+        headers["X-AI-VID"] = config.productId;
+    }
+    if (!config.deviceId.empty()) {
+        headers["X-AI-UID"] = config.deviceId;
+    }
 
     // 发送HTTP GET请求获取网关信息
     HTTPClient http_client;
