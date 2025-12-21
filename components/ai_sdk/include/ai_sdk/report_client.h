@@ -2,20 +2,24 @@
 
 #include "ai_sdk/types.h"
 #include <functional>
-#include "esp_timer.h"
 
 namespace ai_sdk {
 
 /**
  * 上报客户端类
  *
- * 用于设备数据上报和心跳管理，支持即时上报和定时上报两种模式。
+ * 用于设备数据上报，提供即时上报功能。
+ *
+ * 设计说明：
+ * - 本类只提供即时上报能力（dataReport），不提供定时上报功能
+ * - 定时上报是业务层的功能，SDK 只提供基础的 HTTP 上报接口
+ * - 业务层可以根据需要自行实现定时上报（如使用 FreeRTOS 定时器、esp_timer 等）
+ * - 这种设计与 Android SDK 保持一致：Android 的 ReportClient 也不提供定时上报
  *
  * 功能特性：
- * - 即时上报：通过dataReport()接口立即上报设备数据
- * - 定时上报：通过startPeriodicReport()启动周期性心跳（12小时间隔）
- * - 随机偏移：定时上报会自动添加±15分钟的随机偏移，避免服务器压力
- * - ESP32定时器：使用硬件定时器，支持深度睡眠场景
+ * - 即时上报：通过 dataReport() 接口立即上报设备数据
+ * - 简单易用：无状态设计，无需初始化，即调即用
+ * - 灵活可控：业务层完全控制上报时机和频率
  */
 class ReportClient {
 public:
@@ -32,68 +36,32 @@ public:
     using ErrorCallback = std::function<void(const std::string&)>;
 
     /**
-     * ⼼跳接⼝/上报接⼝(定时向云端发送消息)
-     * 设备（24小时至少上报一次）向云端上报信息，更新最后活动时间
+     * 设备数据上报接口
+     *
+     * 向云端上报设备信息或心跳数据，用于更新设备的最后活动时间。
+     *
+     * 上报流程：
+     * 1. 构建 JSON 请求体，包含 params 参数和 eventType 事件类型
+     * 2. 自动添加 SDK 版本号到 params 中
+     * 3. 发送 HTTP POST 请求到设备上报接口
+     * 4. 解析响应并调用用户回调
+     *
+     * 使用示例（业务层主动调用）：
+     * DeviceReportRequest request;
+     * request.eventType = "heartbeat";
+     * request.params["status"] = "online";
+     * request.params["battery"] = "85";
+     * client.dataReport(request, onSuccess, onError);
+     *
+     * @param request 上报请求，包含自定义参数和事件类型
+     * @param onSuccess 成功回调
+     * @param onError 错误回调
      */
     void dataReport(
         const DeviceReportRequest& request,
         ReportCallback onSuccess,
         ErrorCallback onError
     );
-
-    /**
-     * 启动定时上报
-     * 设备每隔12小时向平台上报设备数据信息
-     */
-    bool startPeriodicReport(std::function<void()> reportCallback);
-
-    /**
-     * 停止定时上报
-     */
-    void stopPeriodicReport();
-
-    /**
-     * 构造函数
-     * 初始化上报客户端，创建时默认不启动定时上报
-     */
-    ReportClient();
-
-    /**
-     * 析构函数
-     * 自动停止并清理定时上报资源
-     */
-    ~ReportClient();
-
-private:
-    /**
-     * 定时器回调函数（静态）
-     * @param arg 传递的参数，实际上是this指针
-     */
-    static void timerCallback(void* arg);
-
-    /**
-     * 调度下一次上报
-     * 计算并启动下一次定时上报
-     */
-    void scheduleNextReport();
-
-    /**
-     * 用户提供的上报回调函数
-     * 每次定时触发时调用
-     */
-    std::function<void()> report_callback_;
-
-    /**
-     * 定时上报状态标志
-     * true: 正在运行，false: 已停止
-     */
-    bool is_reporting_;
-
-    /**
-     * ESP32定时器句柄
-     * 用于管理硬件定时器资源
-     */
-    esp_timer_handle_t timer_handle_;
 };
 
 } // namespace ai_sdk
