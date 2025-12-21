@@ -13,6 +13,7 @@
  */
 
 #include "ai_sdk/gate_way.h"
+#include "ai_sdk/ai_assistant_manager.h"  // 用于获取 AIAssistantManager::getInstance()
 #include "esp_log.h"
 #include <string>
 
