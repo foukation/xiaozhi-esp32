@@ -23,7 +23,6 @@ idf_component_register(
         "src/gateway_client.cc"       # 网关客户端（代理配置）
         "src/device_client.cc"        # 设备客户端（注册认证）
         "src/report_client.cc"        # 上报客户端（数据上报和心跳）
-        "src/gateway.cc"              # 网关管理（单例）
         "src/http_client.cc"          # HTTP客户端封装
         "src/ai_assistant_manager.cc" # AI助手管理器（中央管理类）
 

@@ -5,7 +5,9 @@
       "Bash(dir:*)",
       "Bash(find:*)",
       "Bash(findstr /v \"Reference\":*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(xargs cat:*)"
     ]
   }
 }
