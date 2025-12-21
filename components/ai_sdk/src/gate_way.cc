@@ -84,6 +84,8 @@ void GateWay::getGateWay(
     // GateWay 本身不做任何拦截或处理，保持了调用的透明度
     client.getGateWay(onSuccess, onError);
 
+    ESP_LOGI(TAG, "GatewayRequest forwarded to GatewayClient");
+
     // 注意：这里没有错误处理，因为所有错误都通过 onError 回调返回
     // 这是异步编程的最佳实践：错误不通过返回值，而是通过回调通知
 }

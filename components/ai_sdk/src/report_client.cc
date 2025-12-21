@@ -36,6 +36,8 @@ void ReportClient::dataReport(
     ReportCallback onSuccess,
     ErrorCallback onError
 ) {
+    ESP_LOGI(TAG, "API: dataReport");
+
     // 构建JSON请求体
     cJSON* root = cJSON_CreateObject();
 
