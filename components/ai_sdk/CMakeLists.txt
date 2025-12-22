@@ -27,15 +27,21 @@ idf_component_register(
     # 依赖组件
     # SDK运行所需的外部组件（与源码版本相同）
     REQUIRES
-        esp_http_client   # HTTP/HTTPS通信
         json              # JSON数据处理
         esp_timer         # 硬件定时器支持
+    
+    # 私有依赖组件（预编译库内部使用）
+    PRIV_REQUIRES
+        esp_http_client   # HTTP/HTTPS通信
 )
 
-# 指定预编译静态库文件
-# 直接链接完整的静态库文件，避免库查找问题
-target_link_libraries(${COMPONENT_LIB} INTERFACE
-    ${CMAKE_CURRENT_LIST_DIR}/lib/libai_sdk.a)
+# 使用 add_prebuilt_library 添加预编译库
+add_prebuilt_library(ai_sdk_prebuilt 
+    "${CMAKE_CURRENT_LIST_DIR}/lib/libai_sdk.a"
+    REQUIRES esp_http_client json esp_timer)
+
+# 链接预编译库
+target_link_libraries(${COMPONENT_LIB} INTERFACE ai_sdk_prebuilt)
 
 # 可选：添加编译时信息提示
 message(STATUS "AI SDK: Using precompiled library configuration")
