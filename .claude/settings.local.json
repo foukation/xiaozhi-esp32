@@ -9,7 +9,8 @@
       "Bash(ls:*)",
       "Bash(xargs cat:*)",
       "Bash(echo \"✅ config_-> 在 GateWay 中已删除\":*)",
-      "Bash(xtensa-esp32-elf-ar:*)"
+      "Bash(xtensa-esp32-elf-ar:*)",
+      "Bash(ar:*)"
     ]
   }
 }
