@@ -74,30 +74,31 @@ void GatewayClient::getGateWay(GatewayCallback onSuccess, std::function<void(con
 }
 
 /**
- * HTTP响应处理回调
+ * @brief HTTP响应处理回调
  *
  * 解析云端返回的网关配置JSON数据。
+ * 与Android端API保持一致。
  *
- * JSON数据结构：
+ * 响应结构（与Android端一致）：
  * {
- *   "status": 1,          // 是否使用代理（1：使用，0：不使用）
- *   "token": "xxx",       // 认证令牌
+ *   "status": 1,              // 是否使用代理（1：使用，0：不使用）
+ *   "token": "xxx",           // 认证令牌（可为空）
  *   "data": {
- *     "http": "http://...", // HTTP代理地址
- *     "ws": "ws://..."      // WebSocket代理地址
+ *     "http": "http://...",   // HTTP代理地址
+ *     "ws": "ws://..."        // WebSocket代理地址
  *   },
- *   "expires": 86400      // 有效期（秒）
+ *   "expires": 86400          // 有效期（秒）
  * }
  *
  * 解析流程：
- * 1. 解析status字段，判断是否需要使用代理
+ * 1. 解析status字段，判断是否需要使用代理（AgentUseCode.USE或AgentUseCode.NOT）
  * 2. 解析token字段，获取认证令牌
- * 3. 解析data对象中的http和ws代理地址
+ * 3. 解析data对象中的http和ws代理地址（使用新的字段名）
  * 4. 解析expires字段，获取代理有效期
- * 5. 如果status=1，更新全局ApiConfig配置
+ * 5. 如果status=AgentUseCode.USE，更新全局ApiConfig配置
  * 6. 调用用户回调
  *
- * 自动配置：如果云端返回status=1，SDK会自动设置全局代理配置，
+ * 自动配置：如果云端返回status=AgentUseCode.USE，SDK会自动设置全局代理配置，
  * 后续的所有API请求会自动走代理服务器。
  *
  * @param response HTTP响应字符串
@@ -125,7 +126,7 @@ void GatewayClient::onResponse(const std::string& response, GatewayCallback onSu
         gatewayInfo.status = statusJson->valueint;
     }
 
-    // 解析token字段 - 网关认证令牌
+    // 解析token字段 - 网关认证令牌（可为空）
     cJSON* tokenJson = cJSON_GetObjectItem(root, "token");
     if (tokenJson && cJSON_IsString(tokenJson)) {
         gatewayInfo.token = tokenJson->valuestring;
@@ -134,31 +135,44 @@ void GatewayClient::onResponse(const std::string& response, GatewayCallback onSu
     // 解析data对象 - 包含代理服务器地址
     cJSON* dataJson = cJSON_GetObjectItem(root, "data");
     if (dataJson && cJSON_IsObject(dataJson)) {
-        // 解析HTTP代理地址
+        // 解析HTTP代理地址 - 使用新的字段名（与Android端保持一致）
         cJSON* httpJson = cJSON_GetObjectItem(dataJson, "http");
         if (httpJson && cJSON_IsString(httpJson)) {
-            gatewayInfo.http_url = httpJson->valuestring;
+            gatewayInfo.data.http = httpJson->valuestring;
         }
 
-        // 解析WebSocket代理地址
+        // 解析WebSocket代理地址 - 使用新的字段名（与Android端保持一致）
         cJSON* wsJson = cJSON_GetObjectItem(dataJson, "ws");
         if (wsJson && cJSON_IsString(wsJson)) {
-            gatewayInfo.ws_url = wsJson->valuestring;
+            gatewayInfo.data.ws = wsJson->valuestring;
         }
     }
 
-    // 解析expires字段 - 代理有效期（秒）
+    // 解析expires字段 - 代理有效期（秒）- 使用新的字段名
     cJSON* expiresJson = cJSON_GetObjectItem(root, "expires");
     if (expiresJson && cJSON_IsNumber(expiresJson)) {
-        gatewayInfo.expires_in = expiresJson->valueint;
+        gatewayInfo.expires = expiresJson->valueint;
     }
 
-    // 如果status为1，更新全局ApiConfig配置
+    // 如果status为AgentUseCode.USE，更新全局ApiConfig配置
     // 这样后续请求会自动使用代理
-    if (gatewayInfo.status == 1) {
+    if (gatewayInfo.status == AgentUseCode::USE) {
         ApiConfig::useAgent = true;
-        ApiConfig::agentBaseUrl = gatewayInfo.http_url;
+        ApiConfig::agentBaseUrl = gatewayInfo.data.http;
         ApiConfig::apiToken = gatewayInfo.token;
+
+        ESP_LOGI(TAG, "Gateway configuration updated:");
+        ESP_LOGI(TAG, "  Use agent: true");
+        ESP_LOGI(TAG, "  Agent URL: %s", gatewayInfo.data.http.c_str());
+        ESP_LOGI(TAG, "  Token: %s", gatewayInfo.token.empty() ? "(empty)" : "***");
+    } else {
+        // 明确禁用代理
+        ApiConfig::useAgent = false;
+        ApiConfig::agentBaseUrl = "";
+        ApiConfig::apiToken = "";
+
+        ESP_LOGI(TAG, "Gateway configuration updated:");
+        ESP_LOGI(TAG, "  Use agent: false");
     }
 
     // 释放JSON对象内存

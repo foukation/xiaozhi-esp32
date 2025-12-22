@@ -201,6 +201,9 @@ static bool initialize_ai_sdk() {
 
 /**
  * @brief 测试网关访问（手动调用）
+ *
+ * 测试网关配置获取功能，与Android端API保持一致。
+ * 注意：新的数据结构使用嵌套的data对象来存储HTTP和WebSocket地址。
  */
 static void test_gateway_access() {
     ESP_LOGI(TAG, "=== Testing Gateway Access ===");
@@ -215,12 +218,19 @@ static void test_gateway_access() {
     g_manager->gateWayHelp().getGateWay(
         [](const ai_sdk::GatewayInfo& info, const std::string& message) {
             ESP_LOGI(TAG, "Gateway success:");
-            ESP_LOGI(TAG, "  Token: %s", info.token.c_str());
-            ESP_LOGI(TAG, "  HTTP URL: %s", info.http_url.c_str());
-            ESP_LOGI(TAG, "  WebSocket URL: %s", info.ws_url.c_str());
-            ESP_LOGI(TAG, "  Expires in: %d seconds", info.expires_in);
-            ESP_LOGI(TAG, "  Status: %d", info.status);
+            ESP_LOGI(TAG, "  Token: %s", info.token.empty() ? "(empty)" : "***");
+            ESP_LOGI(TAG, "  HTTP URL: %s", info.data.http.c_str());
+            ESP_LOGI(TAG, "  WebSocket URL: %s", info.data.ws.c_str());
+            ESP_LOGI(TAG, "  Expires in: %d seconds", info.expires);
+            ESP_LOGI(TAG, "  Status: %d (1=USE, 0=NOT)", info.status);
             ESP_LOGI(TAG, "  Message: %s", message.c_str());
+
+            // 根据状态码判断是否使用代理
+            if (info.status == ai_sdk::AgentUseCode::USE) {
+                ESP_LOGI(TAG, "  ✅ Agent will be used for subsequent requests");
+            } else {
+                ESP_LOGI(TAG, "  ❌ No agent will be used (direct connection)");
+            }
         },
         [](const std::string& error) {
             ESP_LOGE(TAG, "Gateway error: %s", error.c_str());
@@ -230,6 +240,9 @@ static void test_gateway_access() {
 
 /**
  * @brief 测试数据上报（手动调用）
+ *
+ * 测试设备数据上报功能，与Android端API保持一致。
+ * 新的数据结构需要包含设备认证信息和参数数据。
  */
 static void test_data_report() {
     ESP_LOGI(TAG, "=== Testing Data Report ===");
@@ -239,22 +252,57 @@ static void test_data_report() {
         return;
     }
 
-    // 构建上报请求
+    // 获取当前设备配置（包含deviceId和deviceSecret）
+    const auto& config = g_manager->config();
+
+    // 检查设备是否已认证
+    if (config.deviceId.empty() || config.deviceSecret.empty()) {
+        ESP_LOGE(TAG, "Device not authenticated! Need to call obtainDeviceInformation first");
+        return;
+    }
+
+    // 构建上报请求（新的数据结构，与Android端一致）
     ai_sdk::DeviceReportRequest request;
-    request.eventType = "heartbeat";
-    request.params["status"] = "online";
-    request.params["battery"] = "85";
-    request.params["temperature"] = "25.6";
+    request.deviceId = config.deviceId;           // 设备唯一标识
+    request.deviceSecret = config.deviceSecret;   // 设备密钥
+    request.productId = config.productId;         // 产品ID
+    request.productKey = config.productKey;       // 产品密钥
+
+    // 添加设备参数（使用std::any支持不同类型）
+    request.params["status"] = std::string("online");                    // 设备状态
+    request.params["battery"] = std::string("85");                       // 电池电量
+    request.params["temperature"] = 25.6;                                // 设备温度（double类型）
+    request.params["wifi_rssi"] = -45;                                   // WiFi信号强度（int类型）
+    request.params["netType"] = std::string("wifi");                     // 网络类型
+    request.params["platform"] = std::string("ESP32");                   // 操作系统
+    request.params["firmwareVersion"] = std::string("1.0.0");           // 固件版本
+
+    // 可选：添加MAC地址（如果设备支持）
+    // request.params["mac"] = std::string("AA:BB:CC:DD:EE:FF");
+
+    ESP_LOGI(TAG, "Sending data report with device ID: %s", request.deviceId.c_str());
+    ESP_LOGI(TAG, "Report parameters count: %zu", request.params.size());
 
     // 通过 gateWayHelp() 调用 dataReport()
     // 这与 Android 的调用方式完全一致：manager.gateWayHelp().dataReport()
     g_manager->gateWayHelp().dataReport(
         request,
         [](const ai_sdk::DeviceReportResponse& response) {
-            ESP_LOGI(TAG, "Data report success, status: %d", response.status);
+            ESP_LOGI(TAG, "✅ Data report success:");
+            ESP_LOGI(TAG, "  Status: %d", response.status);
+            ESP_LOGI(TAG, "  Message: %s", response.message.c_str());
+            ESP_LOGI(TAG, "  Device ID: %s", response.data.deviceId.c_str());
+            ESP_LOGI(TAG, "  Protocol Type Time: %s", response.data.protocolTypeTime.c_str());
+
+            // 检查状态码（使用新的常量）
+            if (response.status == 200) {
+                ESP_LOGI(TAG, "  ✅ Report processed successfully");
+            } else {
+                ESP_LOGW(TAG, "  ⚠️ Report processed with warnings (status: %d)", response.status);
+            }
         },
         [](const std::string& error) {
-            ESP_LOGE(TAG, "Data report error: %s", error.c_str());
+            ESP_LOGE(TAG, "❌ Data report error: %s", error.c_str());
         }
     );
 }
@@ -285,7 +333,7 @@ static void test_device_information() {
     g_manager->gateWayHelp().obtainDeviceInformation(
         [](const ai_sdk::DeviceInfoResponse& response) {
             ESP_LOGI(TAG, "Device info success:");
-            ESP_LOGI(TAG, "  Status: %d", response.status);
+            ESP_LOGI(TAG, "  Status: %d", response.code);  // 修改为code字段
             ESP_LOGI(TAG, "  Device ID: %s", response.data.deviceId.c_str());
             ESP_LOGI(TAG, "  Device Secret: %s", response.data.deviceSecret.c_str());
 
