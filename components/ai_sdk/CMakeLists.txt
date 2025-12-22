@@ -1,41 +1,42 @@
-# AI SDK组件配置文件
+# AI SDK组件配置文件 - 预编译库版本
 #
-# 该文件定义了ai_sdk组件的编译配置，用于ESP-IDF构建系统。
+# 该文件用于配置使用预编译静态库的AI SDK组件，不编译源码文件。
 #
-# 组件介绍：
-# ai_sdk是用于ESP32设备的AI/IoT云端连接SDK，提供以下功能：
-# - HTTP客户端封装（支持HTTPS）
-# - 设备注册认证
-# - 网关/代理配置
-# - 设备数据上报（心跳）
-# - 定时任务调度
+# 使用方法：
+# 1. 确保静态库文件已存在：lib/libai_sdk.a
+# 2. 将此文件重命名为 CMakeLists.txt
+# 3. 备份或移除 src/ 目录
+# 4. 编译项目验证功能
 #
-# 依赖组件：
-# - esp_http_client: ESP-IDF HTTP客户端（用于云端通信）
-# - esp_timer: ESP32硬件定时器（用于定时上报）
-# - json: cJSON库（用于JSON数据解析和生成）
+# 优势：
+# - 编译速度更快：跳过源码编译步骤
+# - 保护源码：只提供头文件和库文件
+# - 版本稳定：避免开发中的代码变更影响稳定性
+# - 便于分发：可以提供给其他业务使用
 
 idf_component_register(
-    # 源文件列表
-    # SDK实现文件，包括配置、客户端、网关管理和HTTP通信
-    SRCS
-        "src/api_config.cc"           # API配置管理
-        "src/gateway_client.cc"       # 网关客户端（代理配置）
-        "src/device_client.cc"        # 设备客户端（注册认证）
-        "src/report_client.cc"        # 上报客户端（数据上报和心跳）
-        "src/http_client.cc"          # HTTP客户端封装
-        "src/ai_assistant_manager.cc" # AI助手管理器（中央管理类）
-        "src/gate_way.cc"             # GateWay 网关转发层（与 Android API 保持一致）
+    # 源文件列表 - 空列表（使用预编译库）
+    SRCS ""
 
     # 头文件目录
     # 公共头文件路径，其他组件可以通过#include "ai_sdk/xxx.h"引用
+    # 与源码版本保持一致，确保API兼容性
     INCLUDE_DIRS
         "include"
 
     # 依赖组件
-    # SDK运行所需的外部组件
+    # SDK运行所需的外部组件（与源码版本相同）
     REQUIRES
         esp_http_client   # HTTP/HTTPS通信
-        esp_timer         # 硬件定时器支持
         json              # JSON数据处理
+        esp_timer         # 硬件定时器支持
 )
+
+# 指定预编译静态库文件
+# 直接链接完整的静态库文件，避免库查找问题
+target_link_libraries(${COMPONENT_LIB} INTERFACE
+    ${CMAKE_CURRENT_LIST_DIR}/lib/libai_sdk.a)
+
+# 可选：添加编译时信息提示
+message(STATUS "AI SDK: Using precompiled library configuration")
+message(STATUS "AI SDK Library: ${CMAKE_CURRENT_LIST_DIR}/lib/libai_sdk.a")
