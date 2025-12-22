@@ -27,12 +27,13 @@ idf_component_register(
     # 依赖组件
     # SDK运行所需的外部组件（与源码版本相同）
     REQUIRES
-        json              # JSON数据处理
-        esp_timer         # 硬件定时器支持
+        
     
     # 私有依赖组件（预编译库内部使用）
     PRIV_REQUIRES
         esp_http_client   # HTTP/HTTPS通信
+        json              # JSON数据处理
+        esp_timer         # 硬件定时器支持
 )
 
 # 使用 add_prebuilt_library 添加预编译库
