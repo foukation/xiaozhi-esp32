@@ -3,14 +3,20 @@
   "functionRoot": "./functions",
   "functions": [],
   "ai": {
-    "defaultAgent": "{{env.AI_DEFAULT_AGENT}}",
     "agents": {
       "claude": {
         "type": "custom",
         "baseUrl": "{{env.AI_CLAUDE_BASE_URL}}",
         "apiKey": "{{env.AI_CLAUDE_API_KEY}}",
         "model": "{{env.ANTHROPIC_MODEL}}"
+      },
+      "codex": {
+        "type": "custom",
+        "baseUrl": "{{env.AI_CODEX_BASE_URL}}",
+        "apiKey": "{{env.AI_CODEX_API_KEY}}",
+        "model": "{{env.AI_CODEX_MODEL}}"
       }
-    }
+    },
+    "defaultAgent": "{{env.AI_DEFAULT_AGENT}}"
   }
 }
