@@ -12,7 +12,8 @@
       "Bash(xtensa-esp32-elf-ar:*)",
       "Bash(ar:*)",
       "Bash(grep:*)",
-      "Bash(.h$ \")"
+      "Bash(.h$ \")",
+      "Bash(ls -la /mnt/e/github/xiaozhi-esp32/main/audio/processors/*.cc:*)"
     ]
   }
 }
