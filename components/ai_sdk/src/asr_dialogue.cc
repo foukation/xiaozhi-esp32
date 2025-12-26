@@ -197,28 +197,37 @@ public:
 
     /**
      * @brief 设置回调函数
-     * @param asr_cb ASR结果回调
+     * @param connected_cb 连接成功回调（可选，可为nullptr）
+     * @param asr_cb ASR识别结果回调（中间结果和最终结果）
      * @param dialogue_cb 对话结果回调
      * @param error_cb 错误回调
+     * @param complete_cb 识别完成回调（可选，可为nullptr）
      *
      * 实现要点：
      * 1. 线程安全：使用互斥锁保护回调函数指针
      * 2. 空值检查：允许传入nullptr，表示忽略该类型回调
      * 3. 立即生效：设置后立即用于后续事件
+     * 4. API兼容：与 Android ASRIntelligentDialogue.setListener() 保持一致
      *
      * 回调调用时机：
-     * - asr_cb: 收到ASR识别结果时
+     * - connected_cb: WebSocket连接建立成功时
+     * - asr_cb: 收到ASR识别结果时（中间结果或最终结果）
      * - dialogue_cb: 收到对话响应时
      * - error_cb: 发生错误时（网络、协议、超时等）
+     * - complete_cb: 整个识别会话完成时
      */
-    void setCallbacks(AsrCallback asr_cb,
+    void setCallbacks(ConnectedCallback connected_cb,
+                     AsrCallback asr_cb,
                      DialogueCallback dialogue_cb,
-                     ErrorCallback error_cb) {
+                     ErrorCallback error_cb,
+                     CompleteCallback complete_cb) {
         // TODO: 使用互斥锁保护回调设置
         // std::lock_guard<std::mutex> lock(callback_mutex_);
+        // connected_callback_ = connected_cb;
         // asr_callback_ = asr_cb;
         // dialogue_callback_ = dialogue_cb;
         // error_callback_ = error_cb;
+        // complete_callback_ = complete_cb;
     }
 
 private:
@@ -229,22 +238,34 @@ private:
     AsrWebsocket websocket_;
 
     /**
+     * @brief 连接成功回调
+     * WebSocket连接建立时调用，对应 Android ASRIntelligentDialogue.onConnected()
+     */
+    ConnectedCallback connected_callback_;
+
+    /**
      * @brief ASR回调
-     * 处理语音识别结果
+     * 处理语音识别结果（中间和最终），对应 Android onAsrMidResult/onAsrFinalResult
      */
     AsrCallback asr_callback_;
 
     /**
      * @brief 对话回调
-     * 处理完整对话响应
+     * 处理完整对话响应，对应 Android ASRIntelligentDialogue.onDialogueResult()
      */
     DialogueCallback dialogue_callback_;
 
     /**
      * @brief 错误回调
-     * 处理各类错误
+     * 处理各类错误，对应 Android ASRIntelligentDialogue.onError()
      */
     ErrorCallback error_callback_;
+
+    /**
+     * @brief 完成回调
+     * 整个识别会话完成时调用，对应 Android ASRIntelligentDialogue.onComplete()
+     */
+    CompleteCallback complete_callback_;
 
     /**
      * @brief 状态互斥锁
@@ -349,8 +370,12 @@ AsrDialogue::AsrDialogue() : impl_(std::make_unique<Impl>()) {}
 AsrDialogue::~AsrDialogue() = default;
 
 // 公有接口转发到实现类
-void AsrDialogue::setCallbacks(AsrCallback asr_cb, DialogueCallback dialogue_cb, ErrorCallback error_cb) {
-    impl_->setCallbacks(asr_cb, dialogue_cb, error_cb);
+void AsrDialogue::setCallbacks(ConnectedCallback connected_cb,
+                              AsrCallback asr_cb,
+                              DialogueCallback dialogue_cb,
+                              ErrorCallback error_cb,
+                              CompleteCallback complete_cb) {
+    impl_->setCallbacks(connected_cb, asr_cb, dialogue_cb, error_cb, complete_cb);
 }
 
 bool AsrDialogue::start(const std::string& ws_url) {

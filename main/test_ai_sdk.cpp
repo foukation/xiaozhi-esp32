@@ -320,7 +320,12 @@ static void test_data_report() {
  *
  * 测试流程：
  * 1. 获取语音助手单例实例（AsrDialogue::getInstance）
- * 2. 配置 ASR/对话/错误回调函数（setCallbacks）
+ * 2. 配置 5 个回调函数（与 Android 保持一致）：
+ *    - connected_cb: 连接成功回调（可选，可为nullptr）
+ *    - asr_cb: ASR识别结果回调（中间结果和最终结果）
+ *    - dialogue_cb: 对话结果回调
+ *    - error_cb: 错误回调
+ *    - complete_cb: 识别完成回调（可选，可为nullptr）
  * 3. 建立 WebSocket 连接到语音服务器（start）
  * 4. 监听服务器响应，保持连接 10 秒
  * 5. 优雅关闭连接并清理资源（stop）
@@ -329,7 +334,7 @@ static void test_data_report() {
  * - WebSocket URL 实际应从网关获取（g_manager->gateWayHelp().getGateWay().data.ws）
  * - 当前使用占位符 URL，测试时需要替换为真实服务器地址
  * - 本测试不发送音频流，仅验证连接和基本通信功能
- * - 所有回调函数都打印详细日志，便于验证接口正确性
+ * - 与 Android ASRIntelligentDialogue.RealtimeAsrListener 接口完全兼容
  */
 static void test_voice_assistant() {
     ESP_LOGI(TAG, "=== Test Voice Assistant Connection ===");
@@ -338,9 +343,15 @@ static void test_voice_assistant() {
     auto& asr = ai_sdk::AsrDialogue::getInstance();
     ESP_LOGI(TAG, "Voice Assistant instance obtained successfully");
 
-    // 设置回调函数，处理三种事件：ASR结果、对话结果、错误
+    // 设置回调函数，支持5种事件：连接成功、ASR结果、对话结果、错误、完成
+    // 与 Android ASRIntelligentDialogue.RealtimeAsrListener 接口保持一致
     asr.setCallbacks(
+        // 连接成功回调（WebSocket连接建立时触发）
+        // TODO: 实现连接成功处理逻辑
+        nullptr,  // connected_cb
+
         // ASR识别结果回调（支持中间结果和最终结果）
+        // 对应 Android onAsrMidResult() 和 onAsrFinalResult()
         [](const ai_sdk::AsrResult& result) {
             if (result.is_final) {
                 ESP_LOGI(TAG, "🎤 ASR Final Result: %s", result.text.c_str());
@@ -350,6 +361,7 @@ static void test_voice_assistant() {
         },
 
         // 对话结果回调（包含完整的对话响应信息）
+        // 对应 Android onDialogueResult()
         [](const ai_sdk::DialogueResult& result) {
             ESP_LOGI(TAG, "💬 Assistant Response Received:");
             ESP_LOGI(TAG, "  Message ID: %s", result.qid.c_str());
@@ -371,9 +383,14 @@ static void test_voice_assistant() {
         },
 
         // 错误回调（处理网络错误、协议错误、服务器错误等）
+        // 对应 Android onError()
         [](int code, const std::string& msg) {
             ESP_LOGE(TAG, "❌ Voice Assistant Error [Code: %d]: %s", code, msg.c_str());
-        }
+        },
+
+        // 识别完成回调（整个会话结束时触发）
+        // TODO: 实现完成处理逻辑（资源清理、状态重置等）
+        nullptr   // complete_cb
     );
     ESP_LOGI(TAG, "Callbacks configured successfully");
 

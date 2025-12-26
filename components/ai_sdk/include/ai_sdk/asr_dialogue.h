@@ -101,22 +101,39 @@ struct DialogueResult {
 class AsrDialogue {
 public:
     /**
+     * @typedef ConnectedCallback
+     * @brief 连接成功回调函数类型
+     * @note 与 Android ASRIntelligentDialogue.onConnected() 保持一致
+     */
+    using ConnectedCallback = std::function<void()>;
+
+    /**
      * @typedef AsrCallback
      * @brief ASR识别结果回调函数类型
+     * @note 合并了 Android 的 onAsrMidResult 和 onAsrFinalResult，通过 AsrResult.is_final 区分
      */
     using AsrCallback = std::function<void(const AsrResult&)>;
 
     /**
      * @typedef DialogueCallback
      * @brief 智能对话结果回调函数类型
+     * @note 对应 Android ASRIntelligentDialogue.onDialogueResult()
      */
     using DialogueCallback = std::function<void(const DialogueResult&)>;
 
     /**
      * @typedef ErrorCallback
      * @brief 错误回调函数类型
+     * @note 对应 Android ASRIntelligentDialogue.onError()
      */
     using ErrorCallback = std::function<void(int, const std::string&)>;
+
+    /**
+     * @typedef CompleteCallback
+     * @brief 识别完成回调函数类型
+     * @note 对应 Android ASRIntelligentDialogue.onComplete()
+     */
+    using CompleteCallback = std::function<void()>;
 
     /**
      * @brief 获取单例实例
@@ -126,14 +143,21 @@ public:
 
     /**
      * @brief 设置回调函数
+     * @param connected_cb 连接成功回调（可选，可为nullptr）
      * @param asr_cb ASR识别结果回调
      * @param dialogue_cb 对话结果回调
      * @param error_cb 错误回调
+     * @param complete_cb 识别完成回调（可选，可为nullptr）
      *
      * 必须在调用start()之前设置回调。
      * 回调函数将在独立的任务上下文中执行，需注意线程安全。
+     * 与 Android ASRIntelligentDialogue.setListener() 功能一致，保持API兼容性。
      */
-    void setCallbacks(AsrCallback asr_cb, DialogueCallback dialogue_cb, ErrorCallback error_cb);
+    void setCallbacks(ConnectedCallback connected_cb,
+                     AsrCallback asr_cb,
+                     DialogueCallback dialogue_cb,
+                     ErrorCallback error_cb,
+                     CompleteCallback complete_cb);
 
     /**
      * @brief 启动ASR识别
