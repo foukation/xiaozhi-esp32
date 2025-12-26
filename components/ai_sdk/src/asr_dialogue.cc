@@ -19,8 +19,8 @@
 
 namespace ai_sdk {
 
-// 日志标签（框架阶段暂时未使用，TODO: 在实现中启用）
-// static const char* TAG = "AsrDialogue";
+// 日志标签
+static const char* TAG = "AsrDialogue";
 
 /**
  * @class AsrDialogue::Impl
@@ -30,31 +30,12 @@ namespace ai_sdk {
  * 同时提供更好的二进制兼容性。
  */
 class AsrDialogue::Impl {
+private:
+    static constexpr int CONNECTION_TIMEOUT_MS = 30000;  // 连接超时时间（30秒）
+    static constexpr size_t RECEIVE_TASK_STACK = 4096;   // 接收任务堆栈
+    static constexpr UBaseType_t RECEIVE_TASK_PRIO = 5;  // 接收任务优先级
+
 public:
-    /**
-     * @brief 构造函数
-     *
-     * 初始化内部状态，创建必要的资源（互斥锁等）。
-     */
-    Impl() {
-        // TODO: 创建互斥锁，初始化状态变量
-        // state_mutex_ = std::make_unique<std::mutex>();
-        // is_recognizing_ = false;
-        // is_connected_ = false;
-    }
-
-    /**
-     * @brief 析构函数
-     *
-     * 释放所有资源，关闭WebSocket连接，销毁互斥锁。
-     */
-    ~Impl() {
-        // TODO: 停止识别，断开连接，释放资源
-        // if (is_recognizing_) {
-        //     stop();
-        // }
-    }
-
     /**
      * @brief 启动ASR识别
      * @return bool 是否启动成功
@@ -64,64 +45,238 @@ public:
      * 2. 构建WebSocket URL（内部构建，不是外部传入）
      *   - 基础URL: ApiConfig::WSS_WEBSOCKET_ASR_BASE_URL + ApiConfig::ASR_INTELLIGENT_DIALOGUE_API
      *   - 调用 AssistUtils::wssParameter() 添加参数和签名
-     * 3. 创建WebSocket配置（AsrWebsocketConfig）
+     * 3. 创建WebSocket配置（AsrWebsocketConfig，设置超时时间）
      * 4. 建立WebSocket连接（异步）
-     * 5. 设置连接状态回调
-     * 6. 启动接收任务（处理服务器响应）
-     * 7. 发送ASR配置参数（sample rate, format等）
+     * 5. 等待连接成功（使用信号量，30秒超时）
+     * 6. 发送ASR配置参数（sample rate, format等）
+     * 7. 标记为识别中状态
      *
      * 错误处理：
      * - URL构建失败：返回false，通过error_callback_通知
      * - 网络连接失败：异步通知，尝试重连
+     * - 连接超时：返回false
      * - 配置发送失败：记录日志，继续尝试
      *
      * 线程安全：使用state_mutex_保护状态变量。
      */
     bool start() {
-        // TODO: 实现启动逻辑
-        // std::lock_guard<std::mutex> lock(*state_mutex_);
-        //
-        // if (is_recognizing_) {
-        //     ESP_LOGW(TAG, "Already recognizing");
-        //     return false;
-        // }
-        //
-        // // 第1步：构建完整WebSocket URL（与Android一致）
-        // std::string base_url = std::string(ApiConfig::WSS_WEBSOCKET_ASR_BASE_URL) +
-        //                       ApiConfig::ASR_INTELLIGENT_DIALOGUE_API;
-        // std::string ws_url = AssistUtils::wssParameter(base_url);
-        //
-        // // 第2步：配置WebSocket参数
-        // AsrWebsocketConfig config;
-        // config.url = ws_url;
-        // config.connect_timeout_ms = 10000;  // 连接超时10秒（与Android一致）
-        // config.network_timeout_ms = 30000;  // 网络超时30秒（与Android一致）
-        // config.ping_interval_ms = 30000;    // 心跳间隔30秒（与Android一致）
-        // config.buffer_size = 4096;
-        //
-        // // 第3步：建立WebSocket连接
-        // if (!websocket_.connect(config)) {
-        //     ESP_LOGE(TAG, "Failed to connect WebSocket");
-        //     if (error_callback_) {
-        //         error_callback_(-1, "WebSocket connection failed");
-        //     }
-        //     return false;
-        // }
-        //
-        // // 第4步：发送ASR配置参数
-        // std::string asr_config = R"({
-        //     "type": "config",
-        //     "format": "pcm",
-        //     "sample_rate": 16000,
-        //     "channels": 1,
-        //     "bits_per_sample": 16
-        // })";
-        // websocket_.sendText(asr_config);
-        //
-        // // 第5步：标记为识别中状态
-        // is_recognizing_ = true;
-        // return true;
-        return false;  // TODO: 删除此行，完成实现
+        static const char* TAG = "AsrDialogue.Start";
+
+        // 加锁保护状态
+        std::lock_guard<std::mutex> lock(*state_mutex_);
+
+        // 第1步：检查状态（如果已在识别中，返回false）
+        if (is_recognizing_) {
+            ESP_LOGW(TAG, "Already recognizing, cannot start again");
+            return false;
+        }
+
+        ESP_LOGI(TAG, "Starting ASR recognition...");
+
+        // 第2步：构建完整WebSocket URL（与Android一致）
+        // 基础URL: wss://ivs.chinamobiledevice.com:11443/app-ws/v2/asr
+        std::string base_url = std::string(ApiConfig::WSS_WEBSOCKET_ASR_BASE_URL) +
+                              ApiConfig::ASR_INTELLIGENT_DIALOGUE_API;
+        ESP_LOGI(TAG, "Base URL: %s", base_url.c_str());
+
+        // 添加参数和签名（sn, deviceNo, productKey, ts, sign等）
+        std::string ws_url = AssistUtils::wssParameter(base_url);
+        if (ws_url.empty()) {
+            ESP_LOGE(TAG, "Failed to build WebSocket URL");
+            if (error_callback_) {
+                error_callback_(-1, "Failed to build WebSocket URL");
+            }
+            return false;
+        }
+        ESP_LOGI(TAG, "Full URL: %s", ws_url.c_str());
+
+        // 第3步：配置WebSocket参数（与Android超时配置一致）
+        // - 连接超时：10秒
+        // - 网络超时：30秒
+        // - 心跳间隔：30秒
+        AsrWebsocketConfig config;
+        config.url = ws_url;
+        config.connect_timeout_ms = 10000;   // 10秒
+        config.network_timeout_ms = 30000;   // 30秒
+        config.ping_interval_ms = 30000;     // 30秒（心跳）
+        config.buffer_size = 4096;             // 4KB缓冲区
+        ESP_LOGI(TAG, "WebSocket config created: timeout=%d/%d/%d ms",
+                 config.connect_timeout_ms,
+                 config.network_timeout_ms,
+                 config.ping_interval_ms);
+
+        // 第4步：重置信号量（确保在获取前为0）
+        if (connection_semaphore_ != nullptr) {
+            xSemaphoreTake(connection_semaphore_, 0);  // 清空信号量
+        }
+
+        // 第5步：建立WebSocket连接（异步）
+        // 注册消息回调，监听 "CONNECTED" 事件
+        websocket_.setMessageCallback([this](const uint8_t* data, size_t len, int type) {
+            // 只处理文本消息（type为0代表文本，1代表二进制）
+            if (type == 0) {
+                std::string msg(reinterpret_cast<const char*>(data), len);
+                ESP_LOGD(TAG, "Received message: %s", msg.c_str());
+                if (msg == "CONNECTED") {
+                    ESP_LOGI(TAG, "Received connection confirmation from WebSocket");
+                    this->onConnected();
+                }
+            }
+        });
+
+        if (!websocket_.connect(config)) {
+            ESP_LOGE(TAG, "Failed to initiate WebSocket connection");
+            if (error_callback_) {
+                error_callback_(-1, "Failed to initiate WebSocket connection");
+            }
+            return false;
+        }
+
+        // 第6步：等待连接成功（模拟 Android CountDownLatch.await()）
+        // 等待事件：EventHandler 在连接成功时 give() 信号量
+        ESP_LOGI(TAG, "Waiting for connection... (timeout=%d ms)", CONNECTION_TIMEOUT_MS);
+        if (connection_semaphore_ != nullptr) {
+            // 等待连接成功信号，最多30秒
+            if (xSemaphoreTake(connection_semaphore_, pdMS_TO_TICKS(CONNECTION_TIMEOUT_MS)) != pdTRUE) {
+                ESP_LOGE(TAG, "Connection timeout after %d ms", CONNECTION_TIMEOUT_MS);
+                websocket_.disconnect();
+                if (error_callback_) {
+                    error_callback_(-1, "Connection timeout");
+                }
+                return false;
+            }
+        }
+
+        // 检查是否真的连接成功
+        if (!is_connected_) {
+            ESP_LOGE(TAG, "Connection failed");
+            websocket_.disconnect();
+            if (error_callback_) {
+                error_callback_(-1, "Connection failed");
+            }
+            return false;
+        }
+
+        ESP_LOGI(TAG, "WebSocket connected successfully!");
+
+        // 第7步：调用连接成功回调（对应 Android onConnected()）
+        if (connected_callback_) {
+            connected_callback_();
+        }
+
+        // 第8步：发送ASR配置参数
+        // 格式与服务器要求的配置一致
+        std::string asr_config = R"({
+            "type": "config",
+            "format": "pcm",
+            "sample_rate": 16000,
+            "channels": 1,
+            "bits_per_sample": 16
+        })";
+        ESP_LOGI(TAG, "Sending ASR config: %s", asr_config.c_str());
+
+        if (!websocket_.sendText(asr_config)) {
+            ESP_LOGW(TAG, "Failed to send ASR config, but continuing...");
+            // 发送配置失败但继续（非致命错误）
+        }
+
+        // 第9步：标记为识别中状态
+        is_recognizing_ = true;
+        ESP_LOGI(TAG, "ASR recognition started successfully");
+
+        // TODO: 第10步：启动接收任务（处理服务器响应）
+        // xTaskCreate(ReceiveTaskEntry, "asr_receive", RECEIVE_TASK_STACK, this, ...);
+
+        return true;
+    }
+
+    /**
+     * @brief WebSocket连接成功回调
+     *
+     * 由 SetMessageCallback 在收到 "CONNECTED" 消息时调用
+     * EventHandler 在 WEBSOCKET_EVENT_CONNECTED 时发送 "CONNECTED"
+     */
+    void onConnected() {
+        static const char* TAG = "AsrDialogue.onConnected";
+        ESP_LOGI(TAG, "WebSocket connected");
+
+        std::lock_guard<std::mutex> lock(*state_mutex_);
+        is_connected_ = true;
+
+        // 释放信号量，唤醒等待的 start() 函数
+        if (connection_semaphore_ != nullptr) {
+            xSemaphoreGive(connection_semaphore_);
+        }
+    }
+
+    /**
+     * @brief WebSocket断开回调
+     * @param error 错误信息
+     */
+    void onDisconnected(const std::string& error = "") {
+        static const char* TAG = "AsrDialogue.onDisconnected";
+        ESP_LOGW(TAG, "WebSocket disconnected: %s", error.c_str());
+
+        std::lock_guard<std::mutex> lock(*state_mutex_);
+        is_connected_ = false;
+    }
+
+    /**
+     * @brief 连接同步信号量
+     * 用于等待WebSocket连接建立（模仿 Android CountDownLatch）
+     * - 连接成功：give() 释放信号量
+     * - 连接失败：超时或错误处理
+     *
+     * 实现方式：使用 FreeRTOS 二值信号量（初始为0，连接成功后give）
+     */
+    SemaphoreHandle_t connection_semaphore_ = nullptr;
+
+    /**
+     * @brief 构造函数
+     *
+     * 初始化内部状态，创建必要的资源（互斥锁、信号量等）。
+     */
+    Impl() {
+        // 创建状态互斥锁（保护 is_recognizing_ 和 is_connected_）
+        state_mutex_ = std::make_unique<std::mutex>();
+
+        // 创建回调互斥锁（保护回调函数指针）
+        callback_mutex_ = std::make_unique<std::mutex>();
+
+        // 创建连接信号量（初始为0，用于连接同步）
+        connection_semaphore_ = xSemaphoreCreateBinary();
+        if (connection_semaphore_ == nullptr) {
+            ESP_LOGE(TAG, "Failed to create connection semaphore");
+        }
+
+        is_recognizing_ = false;
+        is_connected_ = false;
+        receive_task_ = nullptr;
+
+        ESP_LOGI(TAG, "AsrDialogue Impl initialized successfully");
+    }
+
+    /**
+     * @brief 析构函数
+     *
+     * 释放所有资源，关闭WebSocket连接，销毁互斥锁和信号量。
+     */
+    ~Impl() {
+        if (is_recognizing_) {
+            stop();
+        }
+
+        // 等待接收任务结束
+        if (receive_task_ != nullptr) {
+            vTaskDelete(receive_task_);
+            receive_task_ = nullptr;
+        }
+
+        // 删除连接信号量
+        if (connection_semaphore_ != nullptr) {
+            vSemaphoreDelete(connection_semaphore_);
+            connection_semaphore_ = nullptr;
+        }
     }
 
     /**
@@ -300,20 +455,6 @@ private:
      * 用于处理服务器响应
      */
     TaskHandle_t receive_task_ = nullptr;
-
-    /**
-     * @brief 接收任务堆栈大小
-     * 单位：字节
-     * 默认值：4096（足够处理JSON解析）
-     */
-    static constexpr size_t RECEIVE_TASK_STACK = 4096;
-
-    /**
-     * @brief 接收任务优先级
-     * ESP-IDF优先级范围：0-24
-     * 默认值：5（中等优先级）
-     */
-    static constexpr UBaseType_t RECEIVE_TASK_PRIO = 5;
 
     /**
      * @brief 接收任务入口函数

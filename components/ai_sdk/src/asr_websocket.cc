@@ -204,14 +204,86 @@ bool AsrWebsocket::isConnecting() const {
     return is_connecting_;
 }
 
-// WebSocket事件处理器实现框架
+// WebSocket事件处理器
 void AsrWebsocket::EventHandler(void* event_handler_arg,
                                 esp_event_base_t event_base,
                                 int32_t event_id,
                                 void* event_data) {
-    // TODO: 实现WebSocket事件处理逻辑
-    // - 处理连接、断开、数据接收等事件
-    // - 调用用户设置的消息回调和事件回调
+    static const char* TAG = "AsrWebsocket.Event";
+
+    // event_handler_arg 是 AsrWebsocket 实例指针
+    AsrWebsocket* websocket = static_cast<AsrWebsocket*>(event_handler_arg);
+    if (!websocket) {
+        ESP_LOGE(TAG, "Invalid event handler argument");
+        return;
+    }
+
+    // 处理 WebSocket 事件
+    switch (event_id) {
+        case WEBSOCKET_EVENT_CONNECTED:
+            {
+                ESP_LOGI(TAG, "WebSocket connected");
+                websocket->is_connected_ = true;
+                websocket->is_connecting_ = false;
+
+                // 调用事件回调
+                if (websocket->event_callback_) {
+                    websocket->event_callback_(event_id, "Connected");
+                }
+
+                // 调用消息回调（通知上层）
+                if (websocket->message_callback_) {
+                    const char* msg = "CONNECTED";
+                    websocket->message_callback_(
+                        reinterpret_cast<const uint8_t*>(msg),
+                        strlen(msg),
+                        0  // 0表示文本消息
+                    );
+                }
+            }
+            break;
+
+        case WEBSOCKET_EVENT_DISCONNECTED:
+            {
+                ESP_LOGW(TAG, "WebSocket disconnected");
+                websocket->is_connected_ = false;
+                websocket->is_connecting_ = false;
+
+                if (websocket->event_callback_) {
+                    websocket->event_callback_(event_id, "Disconnected");
+                }
+            }
+            break;
+
+        case WEBSOCKET_EVENT_DATA:
+            {
+                auto* data = (esp_websocket_event_data_t*)event_data;
+                if (data && websocket->message_callback_) {
+                    websocket->message_callback_(
+                        (const uint8_t*)data->data_ptr,
+                        data->data_len,
+                        data->op_code  // 使用实际的WebSocket操作码（1=文本，2=二进制）
+                    );
+                }
+            }
+            break;
+
+        case WEBSOCKET_EVENT_ERROR:
+            {
+                ESP_LOGE(TAG, "WebSocket error");
+                websocket->is_connected_ = false;
+                websocket->is_connecting_ = false;
+
+                if (websocket->event_callback_) {
+                    websocket->event_callback_(event_id, "Error");
+                }
+            }
+            break;
+
+        default:
+            ESP_LOGD(TAG, "Unhandled WebSocket event: %ld", event_id);
+            break;
+    }
 }
 
 }  // namespace ai_sdk
