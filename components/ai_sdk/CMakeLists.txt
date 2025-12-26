@@ -9,11 +9,13 @@
 # - 网关/代理配置
 # - 设备数据上报（心跳）
 # - 定时任务调度
+# - WebSocket通信（用于ASR语音识别）
 #
 # 依赖组件：
 # - esp_http_client: ESP-IDF HTTP客户端（用于云端通信）
 # - esp_timer: ESP32硬件定时器（用于定时上报）
 # - json: cJSON库（用于JSON数据解析和生成）
+# - esp_websocket_client: WebSocket客户端（用于ASR实时通信）
 
 idf_component_register(
     # 源文件列表
@@ -26,6 +28,8 @@ idf_component_register(
         "src/http_client.cc"          # HTTP客户端封装
         "src/ai_assistant_manager.cc" # AI助手管理器（中央管理类）
         "src/gate_way.cc"             # GateWay 网关转发层（与 Android API 保持一致）
+        "src/asr_websocket.cc"        # WebSocket客户端封装（用于ASR通信）
+        "src/asr_dialogue.cc"         # ASR智能对话管理
 
     # 头文件目录
     # 公共头文件路径，其他组件可以通过#include "ai_sdk/xxx.h"引用
@@ -35,7 +39,8 @@ idf_component_register(
     # 依赖组件
     # SDK运行所需的外部组件
     REQUIRES
-        esp_http_client   # HTTP/HTTPS通信
-        esp_timer         # 硬件定时器支持
-        json              # JSON数据处理
+        esp_http_client     # HTTP/HTTPS通信
+        esp_timer           # 硬件定时器支持
+        json                # JSON数据处理
+        esp_websocket_client # WebSocket通信（用于ASR）
 )

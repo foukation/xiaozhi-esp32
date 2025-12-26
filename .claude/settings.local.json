@@ -15,7 +15,8 @@
       "Bash(.h$ \")",
       "Bash(ls -la /mnt/e/github/xiaozhi-esp32/main/audio/processors/*.cc:*)",
       "Bash(ls -la /mnt/e/github/xiaozhi-esp32/main/audio/*.h:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(xargs:*)"
     ]
   }
 }
