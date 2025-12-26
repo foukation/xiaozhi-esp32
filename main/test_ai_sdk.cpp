@@ -348,8 +348,11 @@ static void test_voice_assistant() {
     asr.setCallbacks(
         // 连接成功回调（WebSocket连接建立时触发）
         // 对应 Android onConnected()
+        // ↓↓↓ 这个函数在什么时候被调用？↓↓
+        // 调用顺序：test_voice_assistant() -> start() -> WebSocket连上 > onConnected() -> 这里！
         []() {
             ESP_LOGI(TAG, "✅ WebSocket Connected: Voice Assistant service ready");
+            // 当这行日志出现时，说明建联成功，可以说话了
         },
 
         // ASR识别结果回调（支持中间结果和最终结果）
