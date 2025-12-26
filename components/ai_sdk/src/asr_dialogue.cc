@@ -60,8 +60,6 @@ public:
      * 线程安全：使用state_mutex_保护状态变量。
      */
     bool start() {
-        static const char* TAG = "AsrDialogue.Start";
-
         // 加锁保护状态
         std::lock_guard<std::mutex> lock(*state_mutex_);
 
@@ -197,7 +195,6 @@ public:
      * EventHandler 在 WEBSOCKET_EVENT_CONNECTED 时发送 "CONNECTED"
      */
     void onConnected() {
-        static const char* TAG = "AsrDialogue.onConnected";
         ESP_LOGI(TAG, "WebSocket connected");
 
         std::lock_guard<std::mutex> lock(*state_mutex_);
@@ -214,7 +211,6 @@ public:
      * @param error 错误信息
      */
     void onDisconnected(const std::string& error = "") {
-        static const char* TAG = "AsrDialogue.onDisconnected";
         ESP_LOGW(TAG, "WebSocket disconnected: %s", error.c_str());
 
         std::lock_guard<std::mutex> lock(*state_mutex_);

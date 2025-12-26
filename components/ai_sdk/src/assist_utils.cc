@@ -12,6 +12,8 @@
 
 namespace ai_sdk {
 
+static const char* TAG = "AssistUtils";
+
 /**
  * @brief 生成全局唯一的会话ID
  * @return 会话标识字符串
@@ -58,11 +60,11 @@ static std::string generateSessionId() {
  * TODO: 需要从DeviceClient获取实际的设备信息
  */
 std::string AssistUtils::wssParameter(const std::string& uri) {
-    ESP_LOGI("AssistUtils", "Building WebSocket URL parameters...");
+    ESP_LOGI(TAG, "Building WebSocket URL parameters...");
 
     // 生成全局唯一的会话标识
     std::string sn = generateSessionId();
-    ESP_LOGI("AssistUtils", "Session ID: %s", sn.c_str());
+    ESP_LOGI(TAG, "Session ID: %s", sn.c_str());
 
     const auto& config = AIAssistantManager::getInstance().config();
 
@@ -86,7 +88,7 @@ std::string AssistUtils::wssParameter(const std::string& uri) {
            << "&deviceId=" << deviceId;
 
     std::string full_url = uri + params.str();
-    ESP_LOGI("AssistUtils", "WebSocket URL: %s", full_url.c_str());
+    ESP_LOGI(TAG, "WebSocket URL: %s", full_url.c_str());
 
     return full_url;
 }
@@ -128,7 +130,7 @@ std::string AssistUtils::signMd5(int64_t timestamp) {
     // 这确保了即使配置不完整也能生成签名（服务器端验证可能更严格）
     if (deviceSecret.empty()) {
         deviceSecret = config.productKey;
-        ESP_LOGW("AssistUtils", "deviceSecret is empty, using productKey as fallback for sign generation");
+        ESP_LOGW(TAG, "deviceSecret is empty, using productKey as fallback for sign generation");
     }
 
     // 步骤2：构建输入字符串（deviceSecret + timestamp）
@@ -136,7 +138,7 @@ std::string AssistUtils::signMd5(int64_t timestamp) {
     std::string ts_str = std::to_string(timestamp);
     std::string input = deviceSecret + ts_str;
 
-    ESP_LOGD("AssistUtils", "Generating MD5 sign for: %s + %s",
+    ESP_LOGD(TAG, "Generating MD5 sign for: %s + %s",
              deviceSecret.c_str(), ts_str.c_str());
 
     // 步骤3：计算MD5哈希（使用mbedtls，ESP-IDF标准库）
@@ -162,7 +164,7 @@ std::string AssistUtils::signMd5(int64_t timestamp) {
     }
 
     std::string result = md5_str.str();
-    ESP_LOGD("AssistUtils", "MD5 sign generated: %s", result.c_str());
+    ESP_LOGD(TAG, "MD5 sign generated: %s", result.c_str());
 
     return result;
 }

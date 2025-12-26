@@ -209,8 +209,6 @@ void AsrWebsocket::EventHandler(void* event_handler_arg,
                                 esp_event_base_t event_base,
                                 int32_t event_id,
                                 void* event_data) {
-    static const char* TAG = "AsrWebsocket.Event";
-
     // event_handler_arg 是 AsrWebsocket 实例指针
     AsrWebsocket* websocket = static_cast<AsrWebsocket*>(event_handler_arg);
     if (!websocket) {
