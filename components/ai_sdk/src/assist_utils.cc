@@ -4,16 +4,13 @@
 #include "ai_sdk/device_client.h"
 #include "esp_log.h"
 #include "esp_mac.h"  // for MAC address
-#include "esp_rom_md5.h"  // for MD5 calculation
+#include <mbedtls/md5.h>  // for MD5 calculation (mbedtls, ESP-IDF standard)
 #include <sstream>
 #include <iomanip>
 #include <cstring>
 #include <cstdlib>  // for rand()
 
 namespace ai_sdk {
-
-// 静态成员定义
-DeviceClient* AssistUtils::device_client_ = nullptr;
 
 /**
  * @brief 生成全局唯一的会话ID
@@ -109,7 +106,7 @@ std::string AssistUtils::wssParameter(const std::string& uri) {
  * 实现细节：
  * 1. 从 AIAssistantManager 配置中获取 deviceSecret
  * 2. 将 timestamp 转换为字符串并拼接: deviceSecret + timestamp
- * 3. 使用 ESP32 ROM MD5 算法计算哈希值（零Flash占用）
+ * 3. 使用 mbedtls MD5 算法计算哈希值（ESP-IDF标准库）
  * 4. 将16字节结果转换为32位小写十六进制字符串
  *
  * 错误处理：
@@ -120,7 +117,7 @@ std::string AssistUtils::wssParameter(const std::string& uri) {
  *
  * 参考：
  * - Android: StringUtils.calculateSign(deviceSecret, timestamp.toString())
- * - 组件: esp_rom_md5（硬件优化，性能最优）
+ * - 组件: mbedtls md5（ESP-IDF标准加密库）
  */
 std::string AssistUtils::signMd5(int64_t timestamp) {
     // 步骤1：获取设备密钥配置
@@ -142,11 +139,15 @@ std::string AssistUtils::signMd5(int64_t timestamp) {
     ESP_LOGD("AssistUtils", "Generating MD5 sign for: %s + %s",
              deviceSecret.c_str(), ts_str.c_str());
 
-    // 步骤3：计算MD5哈希（使用ESP32 ROM函数，零内存分配）
-    // esp_rom_md5() 是存储在ESP32芯片ROM中的硬件优化函数
-    // 参数：输入数据指针、数据长度、输出缓冲区（16字节）
+    // 步骤3：计算MD5哈希（使用mbedtls，ESP-IDF标准库）
+    // mbedtls API: init → starts → update → finish → free
     uint8_t md5_result[16];  // MD5输出固定为16字节（128位）
-    esp_rom_md5((uint8_t*)input.c_str(), input.length(), md5_result);
+    mbedtls_md5_context ctx;
+    mbedtls_md5_init(&ctx);
+    mbedtls_md5_starts(&ctx);
+    mbedtls_md5_update(&ctx, (const unsigned char*)input.c_str(), input.length());
+    mbedtls_md5_finish(&ctx, md5_result);
+    mbedtls_md5_free(&ctx);
 
     // 步骤4：转换为十六进制字符串
     // MD5结果需要转换为32位小写十六进制字符串（每字节2字符）
