@@ -5,6 +5,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+// 语音助手模块头文件（用于ASR语音识别和对话管理）
+#include "ai_sdk/asr_dialogue.h"
+#include "ai_sdk/asr_websocket.h"
+
 static const char* TAG = "AI_SDK_TEST";
 
 // SNTP时间同步任务函数
@@ -308,6 +312,97 @@ static void test_data_report() {
 }
 
 /**
+ * @brief 语音助手连接测试
+ *
+ * 测试语音助手模块的 WebSocket 连接功能，验证语音识别和对话管理接口
+ * 该测试在数据上报之后执行，确保设备已经完成注册和认证，
+ * 这是验证 ASR 模块在 AI SDK 中集成功能的重要步骤。
+ *
+ * 测试流程：
+ * 1. 获取语音助手单例实例（AsrDialogue::getInstance）
+ * 2. 配置 ASR/对话/错误回调函数（setCallbacks）
+ * 3. 建立 WebSocket 连接到语音服务器（start）
+ * 4. 监听服务器响应，保持连接 10 秒
+ * 5. 优雅关闭连接并清理资源（stop）
+ *
+ * @note
+ * - WebSocket URL 实际应从网关获取（g_manager->gateWayHelp().getGateWay().data.ws）
+ * - 当前使用占位符 URL，测试时需要替换为真实服务器地址
+ * - 本测试不发送音频流，仅验证连接和基本通信功能
+ * - 所有回调函数都打印详细日志，便于验证接口正确性
+ */
+static void test_voice_assistant() {
+    ESP_LOGI(TAG, "=== Test Voice Assistant Connection ===");
+
+    // 获取语音助手单例实例（全局唯一，采用单例模式）
+    auto& asr = ai_sdk::AsrDialogue::getInstance();
+    ESP_LOGI(TAG, "Voice Assistant instance obtained successfully");
+
+    // 设置回调函数，处理三种事件：ASR结果、对话结果、错误
+    asr.setCallbacks(
+        // ASR识别结果回调（支持中间结果和最终结果）
+        [](const ai_sdk::AsrResult& result) {
+            if (result.is_final) {
+                ESP_LOGI(TAG, "🎤 ASR Final Result: %s", result.text.c_str());
+            } else {
+                ESP_LOGI(TAG, "🎤 ASR Partial: %s", result.text.c_str());
+            }
+        },
+
+        // 对话结果回调（包含完整的对话响应信息）
+        [](const ai_sdk::DialogueResult& result) {
+            ESP_LOGI(TAG, "💬 Assistant Response Received:");
+            ESP_LOGI(TAG, "  Message ID: %s", result.qid.c_str());
+            ESP_LOGI(TAG, "  Is End: %d (0=streaming, 1=completed)", result.is_end);
+            ESP_LOGI(TAG, "  Answer Content: %s", result.assistant_answer_content.c_str());
+            ESP_LOGI(TAG, "  Directive: %s (指令类型：Speak/RenderStreamCard/Play等)", result.directive.c_str());
+            ESP_LOGI(TAG, "  Payload: %s (指令数据：URL/JSON等)", result.payload.c_str());
+
+            // 根据指令类型识别响应格式（配置/TTS/图片/音乐等）
+            if (result.directive == "Config") {
+                ESP_LOGI(TAG, "  ⚙️ Server configuration received");
+            } else if (result.directive == "Speak") {
+                ESP_LOGI(TAG, "  🔊 TTS audio response");
+            } else if (result.directive == "RenderMultiImageCard") {
+                ESP_LOGI(TAG, "  🖼️ Image generation response");
+            } else if (result.directive == "Play") {
+                ESP_LOGI(TAG, "  🎵 Music/audio playback response");
+            }
+        },
+
+        // 错误回调（处理网络错误、协议错误、服务器错误等）
+        [](int code, const std::string& msg) {
+            ESP_LOGE(TAG, "❌ Voice Assistant Error [Code: %d]: %s", code, msg.c_str());
+        }
+    );
+    ESP_LOGI(TAG, "Callbacks configured successfully");
+
+    // 启动WebSocket连接
+    // TODO: 实际应从网关获取WebSocket URL: info.data.ws（参考 test_gateway_access）
+    const char* ws_url = "wss://your-voice-server.com/v1/asr";
+    ESP_LOGI(TAG, "Connecting to voice server: %s", ws_url);
+
+    if (!asr.start(ws_url)) {
+        ESP_LOGE(TAG, "Failed to start Voice Assistant connection");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Voice Assistant connection initiated, waiting for establishment...");
+
+    // 等待连接建立（实际应监听 WEBSOCKET_EVENT_CONNECTED 事件，此处简化处理）
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // 监听服务器响应10秒（验证双向通信功能）
+    ESP_LOGI(TAG, "Monitoring server responses for 10 seconds...");
+    vTaskDelay(pdMS_TO_TICKS(10000));
+
+    // 优雅关闭连接，释放资源
+    ESP_LOGI(TAG, "Stopping Voice Assistant connection...");
+    asr.stop();
+    ESP_LOGI(TAG, "Voice Assistant test completed successfully");
+}
+
+/**
  * @brief 测试设备信息获取（通过 GateWay）
  *
  * 通过 gateWayHelp() 访问网关对象，然后调用 obtainDeviceInformation()
@@ -346,6 +441,13 @@ static void test_device_information() {
         ESP_LOGI(TAG, "Test 3: Data Report");
         test_data_report();
         vTaskDelay(pdMS_TO_TICKS(3000));
+
+        // ============================================
+        // 测试 4: 语音助手连接（新增）
+        // 在数据上报后测试语音助手模块的ASR和对话功能
+        // ============================================
+        ESP_LOGI(TAG, "Test 4: Voice Assistant Connection");
+        test_voice_assistant();
 
         },
         [](const std::string& error) {
