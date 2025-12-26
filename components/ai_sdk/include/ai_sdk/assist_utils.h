@@ -46,14 +46,6 @@ public:
      */
     static int64_t timestamp();
 
-    /**
-     * @brief 设置设备客户端（用于获取设备信息）
-     * @param device_client 设备客户端实例
-     */
-    static void setDeviceClient(DeviceClient* device_client);
-
-private:
-    static DeviceClient* device_client_;  // 设备客户端（单例）
 };
 
 } // namespace ai_sdk

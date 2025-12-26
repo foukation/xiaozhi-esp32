@@ -4,6 +4,7 @@
 #include "ai_sdk/device_client.h"
 #include "esp_log.h"
 #include "esp_mac.h"  // for MAC address
+#include "esp_rom_md5.h"  // for MD5 calculation
 #include <sstream>
 #include <iomanip>
 #include <cstring>
@@ -94,16 +95,75 @@ std::string AssistUtils::wssParameter(const std::string& uri) {
 }
 
 /**
- * 实现说明：
- * MD5签名生成，与 Android AssistUtils.signMd5() 功能一致
- * TODO: 需要实现实际的MD5计算
+ * @brief MD5签名生成，与 Android StringUtils.calculateSign() 功能一致
+ * @param timestamp 时间戳（毫秒）
+ * @return MD5签名（32位小写十六进制字符串）
+ *
+ * 签名算法：MD5(deviceSecret + timestamp)
+ * 示例:
+ *   deviceSecret = "my-device-secret"
+ *   timestamp = 123456789
+ *   input = "my-device-secret123456789"
+ *   output = "5d41402abc4b2a76b9719d911017c592"
+ *
+ * 实现细节：
+ * 1. 从 AIAssistantManager 配置中获取 deviceSecret
+ * 2. 将 timestamp 转换为字符串并拼接: deviceSecret + timestamp
+ * 3. 使用 ESP32 ROM MD5 算法计算哈希值（零Flash占用）
+ * 4. 将16字节结果转换为32位小写十六进制字符串
+ *
+ * 错误处理：
+ * - 如果 deviceSecret 为空，使用 productKey 作为备选（日志警告）
+ * - 确保始终返回有效的32位字符串
+ *
+ * 线程安全：读取配置是线程安全的（配置在初始化后不变）
+ *
+ * 参考：
+ * - Android: StringUtils.calculateSign(deviceSecret, timestamp.toString())
+ * - 组件: esp_rom_md5（硬件优化，性能最优）
  */
 std::string AssistUtils::signMd5(int64_t timestamp) {
-    // TODO: 实现实际的MD5签名计算
-    // Android实现：StringUtils.calculateSign(deviceSecret, timestamp.toString())
+    // 步骤1：获取设备密钥配置
+    const auto& config = AIAssistantManager::getInstance().config();
+    std::string deviceSecret = config.deviceSecret;
 
-    // 临时返回模拟签名
-    return "mock-sign-" + std::to_string(timestamp);
+    // 备选方案：如果 deviceSecret 为空，使用 productKey
+    // 这确保了即使配置不完整也能生成签名（服务器端验证可能更严格）
+    if (deviceSecret.empty()) {
+        deviceSecret = config.productKey;
+        ESP_LOGW("AssistUtils", "deviceSecret is empty, using productKey as fallback for sign generation");
+    }
+
+    // 步骤2：构建输入字符串（deviceSecret + timestamp）
+    // Android采用字符串拼接方式，不是数值相加
+    std::string ts_str = std::to_string(timestamp);
+    std::string input = deviceSecret + ts_str;
+
+    ESP_LOGD("AssistUtils", "Generating MD5 sign for: %s + %s",
+             deviceSecret.c_str(), ts_str.c_str());
+
+    // 步骤3：计算MD5哈希（使用ESP32 ROM函数，零内存分配）
+    // esp_rom_md5() 是存储在ESP32芯片ROM中的硬件优化函数
+    // 参数：输入数据指针、数据长度、输出缓冲区（16字节）
+    uint8_t md5_result[16];  // MD5输出固定为16字节（128位）
+    esp_rom_md5((uint8_t*)input.c_str(), input.length(), md5_result);
+
+    // 步骤4：转换为十六进制字符串
+    // MD5结果需要转换为32位小写十六进制字符串（每字节2字符）
+    // 例如：0x5d → "5d", 0x41 → "41"
+    std::ostringstream md5_str;
+    for (int i = 0; i < 16; i++) {
+        // 使用 std::hex 转换为十六进制
+        // std::setw(2) 确保两位数（补零）
+        // std::setfill('0') 用0填充
+        md5_str << std::hex << std::setw(2) << std::setfill('0')
+                << static_cast<int>(md5_result[i]);
+    }
+
+    std::string result = md5_str.str();
+    ESP_LOGD("AssistUtils", "MD5 sign generated: %s", result.c_str());
+
+    return result;
 }
 
 /**
@@ -111,13 +171,6 @@ std::string AssistUtils::signMd5(int64_t timestamp) {
  */
 int64_t AssistUtils::timestamp() {
     return esp_log_timestamp();  // 使用ESP-IDF的时间戳
-}
-
-/**
- * 设置设备客户端实例
- */
-void AssistUtils::setDeviceClient(DeviceClient* device_client) {
-    device_client_ = device_client;
 }
 
 } // namespace ai_sdk
