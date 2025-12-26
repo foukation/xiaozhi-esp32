@@ -85,6 +85,9 @@ struct DialogueResult {
  * @code
  * auto& asr = AsrDialogue::getInstance();
  * asr.setCallbacks(
+ *     []() { // 连接成功
+ *         // TODO: 连接成功处理
+ *     },
  *     [](const AsrResult& result) { // 处理识别结果
  *         // TODO: 处理识别结果
  *     },
@@ -93,9 +96,12 @@ struct DialogueResult {
  *     },
  *     [](int code, const std::string& msg) { // 处理错误
  *         // TODO: 处理错误
+ *     },
+ *     []() { // 识别完成
+ *         // TODO: 资源清理
  *     }
  * );
- * asr.start("wss://your-asr-server.com");
+ * asr.start();  // URL在内部构建，无需传入
  * @endcode
  */
 class AsrDialogue {
@@ -161,18 +167,22 @@ public:
 
     /**
      * @brief 启动ASR识别
-     * @param ws_url WebSocket服务器URL
      * @return bool 是否启动成功
      *
      * 启动流程：
-     * 1. 建立WebSocket连接
-     * 2. 发送配置信息（采样率、格式等）
-     * 3. 启动接收任务（处理服务器响应）
-     * 4. 进入就绪状态，等待音频数据
+     * 1. 构建WebSocket URL（基础URL + 参数 + 签名）
+     * 2. 建立WebSocket连接
+     * 3. 发送配置信息（采样率、格式等）
+     * 4. 启动接收任务（处理服务器响应）
+     * 5. 进入就绪状态，等待音频数据
+     *
+     * URL构建：
+     * - 基础URL: ApiConfig::ASR_INTELLIGENT_DIALOGUE_API
+     * - 参数: 设备信息 + 时间戳 + 签名
      *
      * 如果连接失败，将通过error_cb回调通知。
      */
-    bool start(const std::string& ws_url);
+    bool start();
 
     /**
      * @brief 停止ASR识别并释放资源

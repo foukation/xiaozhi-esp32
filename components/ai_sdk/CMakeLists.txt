@@ -28,6 +28,7 @@ idf_component_register(
         "src/http_client.cc"          # HTTP客户端封装
         "src/ai_assistant_manager.cc" # AI助手管理器（中央管理类）
         "src/gate_way.cc"             # GateWay 网关转发层（与 Android API 保持一致）
+        "src/assist_utils.cc"         # 辅助工具类（URL构建和签名生成）
         "src/asr_websocket.cc"        # WebSocket客户端封装（用于ASR通信）
         "src/asr_dialogue.cc"         # ASR智能对话管理
 

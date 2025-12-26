@@ -8,6 +8,8 @@
 
 #include "ai_sdk/asr_dialogue.h"
 #include "ai_sdk/asr_websocket.h"
+#include "ai_sdk/api_config.h"
+#include "ai_sdk/assist_utils.h"
 #include "esp_log.h"
 #include <mutex>
 
@@ -55,12 +57,13 @@ public:
 
     /**
      * @brief 启动ASR识别
-     * @param ws_url WebSocket服务器URL
      * @return bool 是否启动成功
      *
-     * 实现要点：
+     * 实现要点（与Android一致）：
      * 1. 检查当前状态（是否已在识别中）
-     * 2. 解析和验证URL格式
+     * 2. 构建WebSocket URL（内部构建，不是外部传入）
+     *   - 基础URL: ApiConfig::WSS_WEBSOCKET_ASR_BASE_URL + ApiConfig::ASR_INTELLIGENT_DIALOGUE_API
+     *   - 调用 AssistUtils::wssParameter() 添加参数和签名
      * 3. 创建WebSocket配置（AsrWebsocketConfig）
      * 4. 建立WebSocket连接（异步）
      * 5. 设置连接状态回调
@@ -68,13 +71,13 @@ public:
      * 7. 发送ASR配置参数（sample rate, format等）
      *
      * 错误处理：
-     * - URL格式错误：返回false，通过error_callback_通知
+     * - URL构建失败：返回false，通过error_callback_通知
      * - 网络连接失败：异步通知，尝试重连
      * - 配置发送失败：记录日志，继续尝试
      *
      * 线程安全：使用state_mutex_保护状态变量。
      */
-    bool start(const std::string& ws_url) {
+    bool start() {
         // TODO: 实现启动逻辑
         // std::lock_guard<std::mutex> lock(*state_mutex_);
         //
@@ -82,32 +85,30 @@ public:
         //     ESP_LOGW(TAG, "Already recognizing");
         //     return false;
         // }
-
-
-        // TODO: 验证URL格式（ws://或wss://开头）
-        // if (ws_url.find("ws://") != 0 && ws_url.find("wss://") != 0) {
-        //     ESP_LOGE(TAG, "Invalid WebSocket URL: %s", ws_url.c_str());
+        //
+        // // 第1步：构建完整WebSocket URL（与Android一致）
+        // std::string base_url = std::string(ApiConfig::WSS_WEBSOCKET_ASR_BASE_URL) +
+        //                       ApiConfig::ASR_INTELLIGENT_DIALOGUE_API;
+        // std::string ws_url = AssistUtils::wssParameter(base_url);
+        //
+        // // 第2步：配置WebSocket参数
+        // AsrWebsocketConfig config;
+        // config.url = ws_url;
+        // config.connect_timeout_ms = 10000;  // 连接超时10秒（与Android一致）
+        // config.network_timeout_ms = 30000;  // 网络超时30秒（与Android一致）
+        // config.ping_interval_ms = 30000;    // 心跳间隔30秒（与Android一致）
+        // config.buffer_size = 4096;
+        //
+        // // 第3步：建立WebSocket连接
+        // if (!websocket_.connect(config)) {
+        //     ESP_LOGE(TAG, "Failed to connect WebSocket");
         //     if (error_callback_) {
-        //         error_callback_(-1, "Invalid WebSocket URL");
+        //         error_callback_(-1, "WebSocket connection failed");
         //     }
         //     return false;
         // }
         //
-        // TODO: 配置WebSocket参数
-        // AsrWebsocketConfig config;
-        // config.url = ws_url;
-        // config.connect_timeout_ms = 10000;
-        // config.network_timeout_ms = 30000;
-        // config.ping_interval_ms = 5000;
-        // config.buffer_size = 4096;
-
-        // TODO: 建立WebSocket连接
-        // if (!websocket_.connect(config)) {
-        //     ESP_LOGE(TAG, "Failed to connect WebSocket");
-        //     return false;
-        // }
-
-        // TODO: 发送ASR配置参数
+        // // 第4步：发送ASR配置参数
         // std::string asr_config = R"({
         //     "type": "config",
         //     "format": "pcm",
@@ -117,6 +118,7 @@ public:
         // })";
         // websocket_.sendText(asr_config);
         //
+        // // 第5步：标记为识别中状态
         // is_recognizing_ = true;
         // return true;
         return false;  // TODO: 删除此行，完成实现
@@ -378,8 +380,8 @@ void AsrDialogue::setCallbacks(ConnectedCallback connected_cb,
     impl_->setCallbacks(connected_cb, asr_cb, dialogue_cb, error_cb, complete_cb);
 }
 
-bool AsrDialogue::start(const std::string& ws_url) {
-    return impl_->start(ws_url);
+bool AsrDialogue::start() {
+    return impl_->start();
 }
 
 void AsrDialogue::stop() {

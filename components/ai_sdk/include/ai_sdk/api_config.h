@@ -45,6 +45,41 @@ public:
     static const char* DEVICE_DATA_REPORT_API;
 
     /**
+     * WebSocket ASR基础URL
+     * WebSocket语音识别服务基础地址
+     * 对应 Android WSS_WEBSOCKET_ASR_BASE_URL
+     */
+    static const char* WSS_WEBSOCKET_ASR_BASE_URL;
+
+    /**
+     * ASR智能对话API路径（v2版本）
+     * 实时ASR识别和智能对话
+     * 对应 Android ASR_INTELLIGENT_DIALOGUE_API
+     */
+    static const char* ASR_INTELLIGENT_DIALOGUE_API;
+
+    /**
+     * 自动语音识别API路径（v1版本）
+     * 标准ASR识别接口
+     * 对应 Android AUTOMATIC_SPEECH_RECOGNITION_API
+     */
+    static const char* AUTOMATIC_SPEECH_RECOGNITION_API;
+
+    /**
+     * 长语音ASR识别API路径
+     * 支持长语音的持久化ASR识别
+     * 对应 Android AUTOMATIC_SPEECH_RECOGNITION_PERSISTENT_API
+     */
+    static const char* AUTOMATIC_SPEECH_RECOGNITION_PERSISTENT_API;
+
+    /**
+     * ASR实时翻译API路径
+     * 语音识别并实时翻译
+     * 对应 Android ASR_TRANSLATION_API
+     */
+    static const char* ASR_TRANSLATION_API;
+
+    /**
      * HTTP请求超时时间（毫秒）
      * 默认15秒
      */

@@ -347,8 +347,10 @@ static void test_voice_assistant() {
     // 与 Android ASRIntelligentDialogue.RealtimeAsrListener 接口保持一致
     asr.setCallbacks(
         // 连接成功回调（WebSocket连接建立时触发）
-        // TODO: 实现连接成功处理逻辑
-        nullptr,  // connected_cb
+        // 对应 Android onConnected()
+        []() {
+            ESP_LOGI(TAG, "✅ WebSocket Connected: Voice Assistant service ready");
+        },
 
         // ASR识别结果回调（支持中间结果和最终结果）
         // 对应 Android onAsrMidResult() 和 onAsrFinalResult()
@@ -389,17 +391,20 @@ static void test_voice_assistant() {
         },
 
         // 识别完成回调（整个会话结束时触发）
-        // TODO: 实现完成处理逻辑（资源清理、状态重置等）
-        nullptr   // complete_cb
+        // 对应 Android onComplete()
+        []() {
+            ESP_LOGI(TAG, "🏁 Voice Assistant session completed");
+        }
     );
     ESP_LOGI(TAG, "Callbacks configured successfully");
 
     // 启动WebSocket连接
-    // TODO: 实际应从网关获取WebSocket URL: info.data.ws（参考 test_gateway_access）
-    const char* ws_url = "wss://your-voice-server.com/v1/asr";
-    ESP_LOGI(TAG, "Connecting to voice server: %s", ws_url);
+    // URL在内部构建，无需外部传入（与Android设计一致）
+    // AssistUtils::wssParameter() 会自动添加设备信息和签名
+    ESP_LOGI(TAG, "Starting Voice Assistant connection...");
+    ESP_LOGI(TAG, "URL will be built internally using AssistUtils");
 
-    if (!asr.start(ws_url)) {
+    if (!asr.start()) {
         ESP_LOGE(TAG, "Failed to start Voice Assistant connection");
         return;
     }

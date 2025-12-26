@@ -35,6 +35,46 @@ const char* ApiConfig::OBTAIN_DEVICE_INFORMATION_API = "/v2/customer/device/secr
 const char* ApiConfig::DEVICE_DATA_REPORT_API = "/v2/customer/device/report";
 
 /**
+ * WebSocket ASR基础URL
+ * WebSocket语音识别服务基础地址
+ * 对应 Android WSS_WEBSOCKET_ASR_BASE_URL
+ * 使用WebSocket安全连接，端口11443
+ */
+const char* ApiConfig::WSS_WEBSOCKET_ASR_BASE_URL = "wss://ivs.chinamobiledevice.com:11443";
+
+/**
+ * ASR智能对话API路径（v2版本）
+ * 实时ASR识别和智能对话
+ * 完整URL: {WSS_URL}/app-ws/v2/asr
+ * 对应 Android ASR_INTELLIGENT_DIALOGUE_API
+ */
+const char* ApiConfig::ASR_INTELLIGENT_DIALOGUE_API = "/app-ws/v2/asr";
+
+/**
+ * 自动语音识别API路径（v1版本）
+ * 标准ASR识别接口
+ * 完整URL: {WSS_URL}/app-ws/v1/asr
+ * 对应 Android AUTOMATIC_SPEECH_RECOGNITION_API
+ */
+const char* ApiConfig::AUTOMATIC_SPEECH_RECOGNITION_API = "/app-ws/v1/asr";
+
+/**
+ * 长语音ASR识别API路径
+ * 支持长语音的持久化ASR识别
+ * 完整URL: {WSS_URL}/app-ws/v1/long-asr
+ * 对应 Android AUTOMATIC_SPEECH_RECOGNITION_PERSISTENT_API
+ */
+const char* ApiConfig::AUTOMATIC_SPEECH_RECOGNITION_PERSISTENT_API = "/app-ws/v1/long-asr";
+
+/**
+ * ASR实时翻译API路径
+ * 语音识别并实时翻译
+ * 完整URL: {WSS_URL}/app-ws/v1/realtime_speech_trans
+ * 对应 Android ASR_TRANSLATION_API
+ */
+const char* ApiConfig::ASR_TRANSLATION_API = "/app-ws/v1/realtime_speech_trans";
+
+/**
  * HTTP请求超时时间（毫秒）
  * 设置为15秒，考虑网络环境和设备性能
  * 可根据实际需求调整：
