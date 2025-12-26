@@ -18,7 +18,8 @@
       "Bash(test:*)",
       "Bash(xargs:*)",
       "Bash(cat -A)",
-      "Bash(idf.py:*)"
+      "Bash(idf.py:*)",
+      "Bash(wc:*)"
     ]
   }
 }

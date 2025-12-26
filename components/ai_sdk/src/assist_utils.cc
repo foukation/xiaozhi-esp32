@@ -1,5 +1,6 @@
 #include "ai_sdk/assist_utils.h"
 #include "ai_sdk/api_config.h"
+#include "ai_sdk/ai_assistant_manager.h"
 #include "ai_sdk/device_client.h"
 #include "esp_log.h"
 #include "esp_mac.h"  // for MAC address
@@ -65,13 +66,13 @@ std::string AssistUtils::wssParameter(const std::string& uri) {
     std::string sn = generateSessionId();
     ESP_LOGI("AssistUtils", "Session ID: %s", sn.c_str());
 
-    // TODO: 从 DeviceClient 获取实际的设备信息
-    // 目前硬编码，因为C++缺少相应接口
-    std::string deviceNo = "test-device-no";
-    std::string productKey = "test-product-key";
-    std::string productId = "test-product-id";
-    std::string deviceId = "test-device-id";
-    std::string deviceSecret = "test-device-secret";
+    const auto& config = AIAssistantManager::getInstance().config();
+
+    std::string deviceNo = config.deviceNo;
+    std::string productKey = config.productKey;
+    std::string productId = config.productId;
+    std::string deviceId = config.deviceId;
+    std::string deviceSecret = config.deviceSecret;
 
     int64_t ts = timestamp();
     std::string sign = signMd5(ts);
