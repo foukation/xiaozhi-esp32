@@ -345,58 +345,76 @@ static void test_voice_assistant() {
 
     // 设置回调函数，支持5种事件：连接成功、ASR结果、对话结果、错误、完成
     // 与 Android ASRIntelligentDialogue.RealtimeAsrListener 接口保持一致
+    // 注意：底层 asr_dialogue.cc 已输出详细日志，此处只输出上层业务日志
     asr.setCallbacks(
         // 连接成功回调（WebSocket连接建立时触发）
-        // 对应 Android onConnected()
-        // ↓↓↓ 这个函数在什么时候被调用？↓↓
-        // 调用顺序：test_voice_assistant() -> start() -> WebSocket连上 > onConnected() -> 这里！
+        // 对应 Android: listener?.onConnected() + Timber.tag(TAG).d("wss connected:")
         []() {
-            ESP_LOGI(TAG, "✅ WebSocket Connected: Voice Assistant service ready");
-            // 当这行日志出现时，说明建联成功，可以说话了
+            // 底层已输出: "wss connected:"
+            // 上层业务处理：可在此处启动录音、更新UI状态等
+            ESP_LOGI(TAG, "[Callback] onConnected - 连接成功，可以开始说话");
         },
 
         // ASR识别结果回调（支持中间结果和最终结果）
-        // 对应 Android onAsrMidResult() 和 onAsrFinalResult()
+        // 对应 Android: listener?.onAsrMidResult() / onAsrFinalResult()
+        // 底层已输出: "实时识别结果: xxx" / "最终识别结果: xxx"
         [](const ai_sdk::AsrResult& result) {
             if (result.is_final) {
-                ESP_LOGI(TAG, "🎤 ASR Final Result: %s", result.text.c_str());
+                // 底层已输出: "最终识别结果: xxx"
+                // 上层业务处理：可在此处显示最终文字、发送给对话系统等
+                ESP_LOGI(TAG, "[Callback] onAsrFinalResult - %s", result.text.c_str());
             } else {
-                ESP_LOGI(TAG, "🎤 ASR Partial: %s", result.text.c_str());
+                // 底层已输出: "实时识别结果: xxx"
+                // 上层业务处理：可在此处更新实时显示的文字
+                ESP_LOGI(TAG, "[Callback] onAsrMidResult - %s", result.text.c_str());
             }
         },
 
         // 对话结果回调（包含完整的对话响应信息）
-        // 对应 Android onDialogueResult()
+        // 对应 Android: listener?.onDialogueResult() + dialogueResultParseDialogueResult()
+        // 底层已输出: "智能对话结果: xxx" 及各种 directive 详情
         [](const ai_sdk::DialogueResult& result) {
-            ESP_LOGI(TAG, "💬 Assistant Response Received:");
-            ESP_LOGI(TAG, "  Message ID: %s", result.qid.c_str());
-            ESP_LOGI(TAG, "  Is End: %d (0=streaming, 1=completed)", result.is_end);
-            ESP_LOGI(TAG, "  Answer Content: %s", result.assistant_answer_content.c_str());
-            ESP_LOGI(TAG, "  Directive: %s (指令类型：Speak/RenderStreamCard/Play等)", result.directive.c_str());
-            ESP_LOGI(TAG, "  Payload: %s (指令数据：URL/JSON等)", result.payload.c_str());
+            // 上层业务处理：根据 directive 类型执行相应操作
+            ESP_LOGI(TAG, "[Callback] onDialogueResult - qid=%s, is_end=%d, directive=%s",
+                     result.qid.c_str(), result.is_end, result.directive.c_str());
 
-            // 根据指令类型识别响应格式（配置/TTS/图片/音乐等）
-            if (result.directive == "Config") {
-                ESP_LOGI(TAG, "  ⚙️ Server configuration received");
-            } else if (result.directive == "Speak") {
-                ESP_LOGI(TAG, "  🔊 TTS audio response");
+            // 根据指令类型执行业务逻辑
+            if (result.directive == "Speak") {
+                // TTS 播放：从 payload 中解析 url 进行播放
+                ESP_LOGI(TAG, "  -> 执行 TTS 播放");
+            } else if (result.directive == "RenderStreamCard") {
+                // 流式文本：显示 answer 内容
+                ESP_LOGI(TAG, "  -> 显示流式文本");
             } else if (result.directive == "RenderMultiImageCard") {
-                ESP_LOGI(TAG, "  🖼️ Image generation response");
+                // 图片展示：从 payload 中解析图片 url
+                ESP_LOGI(TAG, "  -> 显示图片");
             } else if (result.directive == "Play") {
-                ESP_LOGI(TAG, "  🎵 Music/audio playback response");
+                // 音乐播放：从 payload 中解析音频 url
+                ESP_LOGI(TAG, "  -> 执行音乐播放");
+            }
+
+            // is_end=1 时表示对话结束，可获取完整回答
+            if (result.is_end == 1 && !result.assistant_answer_content.empty()) {
+                ESP_LOGI(TAG, "  -> 对话完成，完整回答: %s", result.assistant_answer_content.c_str());
             }
         },
 
         // 错误回调（处理网络错误、协议错误、服务器错误等）
-        // 对应 Android onError()
+        // 对应 Android: Timber.tag(TAG).e("错误: code=$code, message=$message")
+        // 底层已输出: "错误: code=xxx, message=xxx"
         [](int code, const std::string& msg) {
-            ESP_LOGE(TAG, "❌ Voice Assistant Error [Code: %d]: %s", code, msg.c_str());
+            // 上层业务处理：显示错误提示、重试连接等
+            // code=1: 连接失败/超时/WebSocket错误
+            // code=-1: 消息解析失败
+            ESP_LOGE(TAG, "[Callback] onError - code=%d, message=%s", code, msg.c_str());
         },
 
         // 识别完成回调（整个会话结束时触发）
-        // 对应 Android onComplete()
+        // 对应 Android: listener?.onComplete() + Timber.tag(TAG).d("识别完成")
+        // 底层已输出: "识别完成"
         []() {
-            ESP_LOGI(TAG, "🏁 Voice Assistant session completed");
+            // 上层业务处理：停止录音、重置UI状态、清理资源等
+            ESP_LOGI(TAG, "[Callback] onComplete - 会话结束");
         }
     );
     ESP_LOGI(TAG, "Callbacks configured successfully");
@@ -405,26 +423,25 @@ static void test_voice_assistant() {
     // URL在内部构建，无需外部传入（与Android设计一致）
     // AssistUtils::wssParameter() 会自动添加设备信息和签名
     ESP_LOGI(TAG, "Starting Voice Assistant connection...");
-    ESP_LOGI(TAG, "URL will be built internally using AssistUtils");
 
     if (!asr.start()) {
         ESP_LOGE(TAG, "Failed to start Voice Assistant connection");
         return;
     }
 
-    ESP_LOGI(TAG, "Voice Assistant connection initiated, waiting for establishment...");
+    // ESP_LOGI(TAG, "Voice Assistant connection initiated, waiting for establishment...");
 
     // 等待连接建立（实际应监听 WEBSOCKET_EVENT_CONNECTED 事件，此处简化处理）
-    vTaskDelay(pdMS_TO_TICKS(3000));
+    // vTaskDelay(pdMS_TO_TICKS(3000));
 
     // 监听服务器响应10秒（验证双向通信功能）
-    ESP_LOGI(TAG, "Monitoring server responses for 10 seconds...");
-    vTaskDelay(pdMS_TO_TICKS(10000));
+    // ESP_LOGI(TAG, "Monitoring server responses for 10 seconds...");
+    // vTaskDelay(pdMS_TO_TICKS(10000));
 
     // 优雅关闭连接，释放资源
-    ESP_LOGI(TAG, "Stopping Voice Assistant connection...");
-    asr.stop();
-    ESP_LOGI(TAG, "Voice Assistant test completed successfully");
+    // ESP_LOGI(TAG, "Stopping Voice Assistant connection...");
+    // asr.stop();
+    // ESP_LOGI(TAG, "Voice Assistant test completed successfully");
 }
 
 /**
