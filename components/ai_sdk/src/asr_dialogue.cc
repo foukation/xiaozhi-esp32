@@ -10,7 +10,11 @@
 #include "ai_sdk/asr_websocket.h"
 #include "ai_sdk/api_config.h"
 #include "ai_sdk/assist_utils.h"
+#include "ai_sdk/ai_assistant_manager.h"
 #include "esp_log.h"
+#include "esp_websocket_client.h"
+#include "cJSON.h"
+#include "esp_timer.h"
 #include <mutex>
 
 // FreeRTOS头文件
@@ -126,14 +130,15 @@ public:
         // 注意：回调函数在 WebSocket 事件线程中执行，不是 start() 所在的线程
         websocket_.setEventCallback([this](int event_id, const std::string& message) {
             // event_id 对应 esp_websocket_client 的事件枚举值
+            // 使用枚举值而不是硬编码数字，确保与 ESP-IDF 版本兼容
             ESP_LOGI(TAG, "Event: WebSocket event_id=%d", event_id);
             switch (event_id) {
-                case 1:  // WEBSOCKET_EVENT_CONNECTED
+                case WEBSOCKET_EVENT_CONNECTED:
                     ESP_LOGI(TAG, "Event: WebSocket connected");
                     this->onConnected();
                     break;
 
-                case 2:  // WEBSOCKET_EVENT_DISCONNECTED
+                case WEBSOCKET_EVENT_DISCONNECTED:
                     ESP_LOGW(TAG, "Event: WebSocket disconnected - %s", message.c_str());
                     this->onDisconnected(message);
                     // 释放信号量，让 start() 立即返回失败（如果还在等待连接）
@@ -142,7 +147,7 @@ public:
                     }
                     break;
 
-                case 4:  // WEBSOCKET_EVENT_ERROR
+                case WEBSOCKET_EVENT_ERROR:
                     ESP_LOGE(TAG, "Event: WebSocket error - %s", message.c_str());
                     // 释放信号量，让 start() 立即返回失败
                     if (connection_semaphore_ != nullptr) {
@@ -168,9 +173,9 @@ public:
             // type: 1=文本消息, 2=二进制消息（WebSocket opcode）
             if (type == 1) {
                 // 文本消息：JSON 格式的 ASR 结果或对话响应
-                std::string msg(reinterpret_cast<const char*>(data), len);
-                ESP_LOGI(TAG, "Received text message: %s", msg.c_str());
-                // TODO: 调用 parseMessage() 解析并分发到对应回调
+                ESP_LOGI(TAG, "Received text message, len=%d", len);
+                // 调用 parseMessage() 解析并分发到对应回调
+                this->parseMessage(data, len);
             } else if (type == 2) {
                 // 二进制消息：可能是音频数据等
                 ESP_LOGD(TAG, "Received binary message, len=%d", len);
@@ -241,23 +246,11 @@ public:
         }
 
         // ========================================
-        // 第11步：发送ASR配置参数（Start Signal）
+        // 第11步：发送 Start Signal（与 Android 一致）
         // ========================================
-        // 格式与服务器要求的配置一致
-        // TODO: 改为发送完整的 Start Signal（与 Android 一致）
-        std::string asr_config = R"({
-            "type": "config",
-            "format": "pcm",
-            "sample_rate": 16000,
-            "channels": 1,
-            "bits_per_sample": 16
-        })";
-        ESP_LOGI(TAG, "Sending ASR config: %s", asr_config.c_str());
-
-        if (!websocket_.sendText(asr_config)) {
-            ESP_LOGW(TAG, "Failed to send ASR config, but continuing...");
-            // 发送配置失败但继续（非致命错误）
-        }
+        // 发送完整的 Start Signal，包含设备信息和配置参数
+        // 参考 Android DealSotaOne.createStartSignal()
+        sendStartSignal();
 
         ESP_LOGI(TAG, "ASR recognition started successfully");
 
@@ -382,25 +375,51 @@ public:
      * 注意：停止操作可能需要100-500ms，应考虑异步实现。
      */
     void stop() {
-        // TODO: 实现停止逻辑
-        // std::lock_guard<std::mutex> lock(*state_mutex_);
-        //
-        // if (!is_recognizing_) {
-        //     ESP_LOGW(TAG, "Not recognizing");
-        //     return;
-        // }
-        //
-        // TODO: 发送结束信号
-        // std::string finish_msg = R"({"type": "finish"})";
-        // websocket_.sendText(finish_msg);
-        //
-        // TODO: 等待服务器响应（超时2秒）
-        // vTaskDelay(pdMS_TO_TICKS(2000));
-        //
-        // TODO: 关闭连接
-        // websocket_.disconnect();
-        //
-        // is_recognizing_ = false;
+        ESP_LOGI(TAG, "Stopping ASR recognition...");
+
+        // 检查当前状态
+        {
+            std::lock_guard<std::mutex> lock(*state_mutex_);
+            if (!is_recognizing_) {
+                ESP_LOGW(TAG, "Not recognizing, nothing to stop");
+                return;
+            }
+        }
+
+        // 发送 Finish Signal（与 Android 一致）
+        // 通知服务器停止识别
+        std::string finish_msg = R"({"type": "finish"})";
+        ESP_LOGI(TAG, "Sending Finish Signal: %s", finish_msg.c_str());
+
+        if (websocket_.sendText(finish_msg)) {
+            ESP_LOGI(TAG, "Finish Signal sent successfully");
+
+            // 等待服务器响应（最多 2 秒）
+            // 给服务器时间处理并返回最终结果
+            ESP_LOGI(TAG, "Waiting for server response (2 seconds)...");
+            vTaskDelay(pdMS_TO_TICKS(2000));
+        } else {
+            ESP_LOGW(TAG, "Failed to send Finish Signal");
+        }
+
+        // 断开 WebSocket 连接
+        ESP_LOGI(TAG, "Disconnecting WebSocket...");
+        websocket_.disconnect();
+
+        // 重置状态变量
+        {
+            std::lock_guard<std::mutex> lock(*state_mutex_);
+            is_recognizing_ = false;
+            is_connected_ = false;
+        }
+
+        // 调用完成回调
+        if (complete_callback_) {
+            ESP_LOGI(TAG, "Calling complete callback");
+            complete_callback_();
+        }
+
+        ESP_LOGI(TAG, "ASR recognition stopped successfully");
     }
 
     /**
@@ -467,13 +486,18 @@ public:
                      DialogueCallback dialogue_cb,
                      ErrorCallback error_cb,
                      CompleteCallback complete_cb) {
-        // TODO: 使用互斥锁保护回调设置
-        // std::lock_guard<std::mutex> lock(callback_mutex_);
-        // connected_callback_ = connected_cb;
-        // asr_callback_ = asr_cb;
-        // dialogue_callback_ = dialogue_cb;
-        // error_callback_ = error_cb;
-        // complete_callback_ = complete_cb;
+        // 使用互斥锁保护回调设置，确保线程安全
+        std::lock_guard<std::mutex> lock(*callback_mutex_);
+
+        // 保存回调函数指针
+        // 允许传入 nullptr，表示忽略该类型回调
+        connected_callback_ = connected_cb;
+        asr_callback_ = asr_cb;
+        dialogue_callback_ = dialogue_cb;
+        error_callback_ = error_cb;
+        complete_callback_ = complete_cb;
+
+        ESP_LOGI(TAG, "Callbacks set successfully");
     }
 
 private:
@@ -570,8 +594,9 @@ private:
      *
      * 消息类型：
      * 1. mid_result: {"type": "mid_result", "result": "部分文本"}
-     * 2. final_result: {"type": "final_result", "result": "完整文本"}
-     * 3. directive: {"type": "directive", "data": [...]}
+     * 2. fin_result: {"type": "fin_result", "result": "完整文本"}
+     * 3. inside_rc: {"type": "inside_rc", "data": {...}}
+     * 4. dcs_decide: {"type": "dcs_decide", "end": 1}
      *
      * 实现步骤：
      * 1. JSON解析（使用cJSON）
@@ -587,6 +612,26 @@ private:
      * - 未知类型：忽略或记录警告
      */
     void parseMessage(const uint8_t* payload, size_t len);
+
+    /**
+     * @brief 发送 Start Signal
+     *
+     * 与 Android DealSotaOne.createStartSignal() 对应
+     * 建联成功后发送，包含设备信息和配置参数
+     *
+     * JSON 结构：
+     * {
+     *   "type": "start",
+     *   "data": {
+     *     "cuid": "设备号",
+     *     "format": "pcm",
+     *     "sample": 16000,
+     *     "dialog_request_id": "唯一ID",
+     *     "client_context": [...]
+     *   }
+     * }
+     */
+    void sendStartSignal();
 };
 
 // 单例实现
@@ -630,12 +675,258 @@ void AsrDialogue::Impl::ReceiveTaskEntry(void* param) {
     // - 调用相应回调函数
 }
 
-// 消息解析函数空实现
+// 消息解析函数实现
+// 参考 Android DealSotaOne.onMessage() 实现
 void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
-    // TODO: 实现消息解析
-    // - 解析JSON格式
-    // - 区分响应类型（ASR中间结果、最终结果、对话指令）
-    // - 调用回调函数
+    // 将 payload 转换为字符串（用于日志和解析）
+    std::string json_str(reinterpret_cast<const char*>(payload), len);
+
+    // 解析 JSON
+    cJSON* root = cJSON_Parse(json_str.c_str());
+    if (!root) {
+        ESP_LOGE(TAG, "Failed to parse JSON message: %s", json_str.c_str());
+        if (error_callback_) {
+            error_callback_(-1, "Failed to parse JSON message");
+        }
+        return;
+    }
+
+    // 获取消息类型
+    cJSON* type_item = cJSON_GetObjectItem(root, "type");
+    if (!type_item || !cJSON_IsString(type_item)) {
+        ESP_LOGW(TAG, "Message missing 'type' field: %s", json_str.c_str());
+        cJSON_Delete(root);
+        return;
+    }
+
+    const char* type = type_item->valuestring;
+    ESP_LOGI(TAG, "Received message type: %s", type);
+
+    // 根据消息类型分发处理
+    if (strcmp(type, "mid_result") == 0) {
+        // ASR 中间结果（实时识别）
+        cJSON* result = cJSON_GetObjectItem(root, "result");
+        if (result && cJSON_IsString(result)) {
+            ESP_LOGI(TAG, "ASR mid_result: %s", result->valuestring);
+            if (asr_callback_) {
+                AsrResult asr_result;
+                asr_result.text = result->valuestring;
+                asr_result.is_final = false;
+                asr_callback_(asr_result);
+            }
+        }
+    }
+    else if (strcmp(type, "fin_result") == 0) {
+        // ASR 最终结果
+        cJSON* result = cJSON_GetObjectItem(root, "result");
+        if (result && cJSON_IsString(result)) {
+            ESP_LOGI(TAG, "ASR fin_result: %s", result->valuestring);
+            if (asr_callback_) {
+                AsrResult asr_result;
+                asr_result.text = result->valuestring;
+                asr_result.is_final = true;
+                asr_callback_(asr_result);
+            }
+        }
+    }
+    else if (strcmp(type, "inside_rc") == 0) {
+        // 智能对话结果（包含 directives）
+        cJSON* data = cJSON_GetObjectItem(root, "data");
+        if (data) {
+            DialogueResult dialogue_result;
+
+            // 解析 qid
+            cJSON* qid = cJSON_GetObjectItem(data, "qid");
+            if (qid && cJSON_IsString(qid)) {
+                dialogue_result.qid = qid->valuestring;
+            }
+
+            // 解析 is_end
+            cJSON* is_end = cJSON_GetObjectItem(data, "is_end");
+            if (is_end && cJSON_IsNumber(is_end)) {
+                dialogue_result.is_end = is_end->valueint;
+            }
+
+            // 解析 assistant_answer
+            cJSON* assistant_answer = cJSON_GetObjectItem(data, "assistant_answer");
+            if (assistant_answer && cJSON_IsString(assistant_answer)) {
+                dialogue_result.assistant_answer_content = assistant_answer->valuestring;
+            }
+
+            // 解析 directives 数组
+            cJSON* directives = cJSON_GetObjectItem(data, "data");
+            if (directives && cJSON_IsArray(directives)) {
+                cJSON* directive = NULL;
+                cJSON_ArrayForEach(directive, directives) {
+                    cJSON* header = cJSON_GetObjectItem(directive, "header");
+                    cJSON* payload_obj = cJSON_GetObjectItem(directive, "payload");
+
+                    if (header) {
+                        cJSON* name = cJSON_GetObjectItem(header, "name");
+                        if (name && cJSON_IsString(name)) {
+                            dialogue_result.directive = name->valuestring;
+                            ESP_LOGI(TAG, "Directive: %s", dialogue_result.directive.c_str());
+                        }
+                    }
+
+                    if (payload_obj) {
+                        char* payload_str = cJSON_PrintUnformatted(payload_obj);
+                        if (payload_str) {
+                            dialogue_result.payload = payload_str;
+                            free(payload_str);
+                        }
+                    }
+
+                    // 每个 directive 都调用一次回调
+                    if (dialogue_callback_) {
+                        dialogue_callback_(dialogue_result);
+                    }
+                }
+            } else {
+                // 没有 directives 数组，也调用回调
+                if (dialogue_callback_) {
+                    dialogue_callback_(dialogue_result);
+                }
+            }
+        }
+    }
+    else if (strcmp(type, "ready") == 0) {
+        // 服务器准备就绪
+        ESP_LOGI(TAG, "Server ready");
+    }
+    else if (strcmp(type, "dcs_decide") == 0) {
+        // 决策消息，检查 end 标志
+        cJSON* end = cJSON_GetObjectItem(root, "end");
+        if (end && cJSON_IsNumber(end) && end->valueint == 1) {
+            ESP_LOGI(TAG, "Session complete (dcs_decide end=1)");
+            if (complete_callback_) {
+                complete_callback_();
+            }
+        }
+    }
+    else {
+        // 未知消息类型
+        ESP_LOGD(TAG, "Unknown message type: %s", type);
+    }
+
+    // 释放 JSON 对象
+    cJSON_Delete(root);
+}
+
+// 发送 Start Signal 实现
+void AsrDialogue::Impl::sendStartSignal() {
+    ESP_LOGI(TAG, "Building Start Signal...");
+
+    // 创建根 JSON 对象
+    cJSON* root = cJSON_CreateObject();
+    if (!root) {
+        ESP_LOGE(TAG, "Failed to create JSON root object");
+        return;
+    }
+
+    // 设置消息类型为 "start"
+    cJSON_AddStringToObject(root, "type", "start");
+
+    // 创建 data 对象
+    cJSON* data = cJSON_CreateObject();
+    if (!data) {
+        ESP_LOGE(TAG, "Failed to create JSON data object");
+        cJSON_Delete(root);
+        return;
+    }
+
+    // 获取设备配置信息
+    const auto& config = AIAssistantManager::getInstance().config();
+
+    // 基础配置（与 Android hht_ctx4.conf 对应）
+    cJSON_AddStringToObject(data, "cuid", config.deviceNo.c_str());
+    cJSON_AddStringToObject(data, "format", "pcm");  // ESP32 使用 PCM 格式
+    cJSON_AddNumberToObject(data, "sample", 16000);
+    cJSON_AddNumberToObject(data, "support_dcs", 2);
+    cJSON_AddNumberToObject(data, "chunk_size", 5120);
+    cJSON_AddBoolToObject(data, "support_tts", true);
+    cJSON_AddBoolToObject(data, "support_text2dcs", true);
+    cJSON_AddStringToObject(data, "client_ip", "");
+    cJSON_AddBoolToObject(data, "access_rc", true);
+    cJSON_AddBoolToObject(data, "support_part_tts", true);
+    cJSON_AddBoolToObject(data, "need_stoplisten", true);
+    cJSON_AddBoolToObject(data, "need_dialogue_finish", true);
+    cJSON_AddBoolToObject(data, "result_trans2directive", false);
+
+    // 生成唯一对话 ID（UUID + 时间戳）
+    char dialog_id[64];
+    int64_t timestamp = esp_timer_get_time() / 1000;  // 微秒转毫秒
+    snprintf(dialog_id, sizeof(dialog_id), "esp32-%s-%lld", 
+             config.deviceNo.c_str(), (long long)timestamp);
+    cJSON_AddStringToObject(data, "dialog_request_id", dialog_id);
+
+    // 创建 client_context 数组（设备状态信息）
+    cJSON* client_context = cJSON_CreateArray();
+    if (client_context) {
+        // 1. Voice Output State
+        cJSON* voice_state = cJSON_CreateObject();
+        cJSON* voice_header = cJSON_CreateObject();
+        cJSON_AddStringToObject(voice_header, "namespace", "ai.fxzsos.device_interface.voice_output");
+        cJSON_AddStringToObject(voice_header, "name", "SpeechState");
+        cJSON_AddItemToObject(voice_state, "header", voice_header);
+        cJSON* voice_payload = cJSON_CreateObject();
+        cJSON_AddStringToObject(voice_payload, "playerActivity", "FINISHED");
+        cJSON_AddNumberToObject(voice_payload, "offsetInMilliseconds", 0);
+        cJSON_AddStringToObject(voice_payload, "token", "");
+        cJSON_AddItemToObject(voice_state, "payload", voice_payload);
+        cJSON_AddItemToArray(client_context, voice_state);
+
+        // 2. Speaker Controller State
+        cJSON* speaker_state = cJSON_CreateObject();
+        cJSON* speaker_header = cJSON_CreateObject();
+        cJSON_AddStringToObject(speaker_header, "namespace", "ai.fxzsos.device_interface.speaker_controller");
+        cJSON_AddStringToObject(speaker_header, "name", "Volume");
+        cJSON_AddItemToObject(speaker_state, "header", speaker_header);
+        cJSON* speaker_payload = cJSON_CreateObject();
+        cJSON_AddNumberToObject(speaker_payload, "volume", 50);
+        cJSON_AddBoolToObject(speaker_payload, "muted", false);
+        cJSON_AddItemToObject(speaker_state, "payload", speaker_payload);
+        cJSON_AddItemToArray(client_context, speaker_state);
+
+        // 3. Audio Player State
+        cJSON* audio_state = cJSON_CreateObject();
+        cJSON* audio_header = cJSON_CreateObject();
+        cJSON_AddStringToObject(audio_header, "namespace", "ai.fxzsos.device_interface.audio_player");
+        cJSON_AddStringToObject(audio_header, "name", "PlaybackState");
+        cJSON_AddItemToObject(audio_state, "header", audio_header);
+        cJSON* audio_payload = cJSON_CreateObject();
+        cJSON_AddStringToObject(audio_payload, "playerActivity", "FINISHED");
+        cJSON_AddNumberToObject(audio_payload, "offsetInMilliseconds", 0);
+        cJSON_AddStringToObject(audio_payload, "token", "");
+        cJSON_AddItemToObject(audio_state, "payload", audio_payload);
+        cJSON_AddItemToArray(client_context, audio_state);
+
+        cJSON_AddItemToObject(data, "client_context", client_context);
+    }
+
+    // 将 data 添加到 root
+    cJSON_AddItemToObject(root, "data", data);
+
+    // 序列化 JSON
+    char* json_str = cJSON_PrintUnformatted(root);
+    if (json_str) {
+        ESP_LOGI(TAG, "Sending Start Signal: %s", json_str);
+
+        // 发送到服务器
+        if (!websocket_.sendText(json_str)) {
+            ESP_LOGW(TAG, "Failed to send Start Signal");
+        } else {
+            ESP_LOGI(TAG, "Start Signal sent successfully");
+        }
+
+        // 释放 JSON 字符串
+        free(json_str);
+    } else {
+        ESP_LOGE(TAG, "Failed to serialize JSON");
+    }
+
+    // 释放 JSON 对象
+    cJSON_Delete(root);
 }
 
 }  // namespace ai_sdk

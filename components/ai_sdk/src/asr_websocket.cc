@@ -120,52 +120,76 @@ bool AsrWebsocket::connect(const AsrWebsocketConfig& config) {
 }
 
 void AsrWebsocket::disconnect() {
-    // TODO: 实现断开连接
-    // if (!client_) {
-    //     return;
-    // }
-    //
-    // esp_websocket_client_close(client_, pdMS_TO_TICKS(1000));
-    // esp_websocket_client_destroy(client_);
-    // client_ = nullptr;
-    // is_connected_ = false;
-    // is_connecting_ = false;
+    // 检查客户端是否存在
+    if (!client_) {
+        ESP_LOGD(TAG, "No client to disconnect");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Disconnecting WebSocket...");
+
+    // 关闭 WebSocket 连接（等待最多 1 秒）
+    esp_websocket_client_close(client_, pdMS_TO_TICKS(1000));
+
+    // 销毁客户端，释放资源
+    esp_websocket_client_destroy(client_);
+    client_ = nullptr;
+
+    // 重置状态变量
+    is_connected_ = false;
+    is_connecting_ = false;
+
+    ESP_LOGI(TAG, "WebSocket disconnected and resources released");
 }
 
 bool AsrWebsocket::sendText(const std::string& text) {
-    // TODO: 实现发送文本
-    // if (!client_ || !is_connected_) {
-    //     ESP_LOGE(TAG, "Not connected");
-    //     return false;
-    // }
-    //
-    // esp_err_t ret = esp_websocket_client_send_text(
-    //     client_,
-    //     text.c_str(),
-    //     text.length(),
-    //     pdMS_TO_TICKS(1000)
-    // );
-    //
-    // return ret == ESP_OK;
-    return false;  // TODO: 完成实现
+    // 检查连接状态
+    if (!client_ || !is_connected_) {
+        ESP_LOGE(TAG, "Not connected, cannot send text");
+        return false;
+    }
+
+    // 发送文本消息
+    // 参数：客户端句柄、文本内容、文本长度、超时时间
+    esp_err_t ret = esp_websocket_client_send_text(
+        client_,
+        text.c_str(),
+        text.length(),
+        pdMS_TO_TICKS(1000)  // 超时 1 秒
+    );
+
+    if (ret < 0) {
+        ESP_LOGE(TAG, "Failed to send text: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ESP_LOGD(TAG, "Text sent successfully, len=%d", text.length());
+    return true;
 }
 
 bool AsrWebsocket::sendBinary(const uint8_t* data, size_t len) {
-    // TODO: 实现发送二进制数据
-    // if (!client_ || !is_connected_) {
-    //     ESP_LOGE(TAG, "Not connected");
-    //     return false;
-    // }
-    //
-    // esp_err_t ret = esp_websocket_client_send_bin(
-    //     client_,
-    //     data,
-    //     len,
-    //     pdMS_TO_TICKS(1000)
-    // );
-    //
-    // return ret == ESP_OK;
-    return false;  // TODO: 完成实现
+    // 检查连接状态
+    if (!client_ || !is_connected_) {
+        ESP_LOGE(TAG, "Not connected, cannot send binary");
+        return false;
+    }
+
+    // 发送二进制数据
+    // 参数：客户端句柄、数据指针、数据长度、超时时间
+    esp_err_t ret = esp_websocket_client_send_bin(
+        client_,
+        (const char*)data,
+        len,
+        pdMS_TO_TICKS(1000)  // 超时 1 秒
+    );
+
+    if (ret < 0) {
+        ESP_LOGE(TAG, "Failed to send binary: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ESP_LOGD(TAG, "Binary sent successfully, len=%d", len);
+    return true;
 }
 
 void AsrWebsocket::setMessageCallback(MessageCallback callback) {
