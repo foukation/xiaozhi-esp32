@@ -1059,7 +1059,8 @@ void AsrDialogue::Impl::sendStartSignal() {
     cJSON_AddStringToObject(data, "format", "opus");
     cJSON_AddNumberToObject(data, "sample", 16000);
     cJSON_AddNumberToObject(data, "support_dcs", 2);
-    // chunk_size：与 Android hht_ctx4.conf 保持一致（10240 字节）
+    // chunk_size：服务器协议参数，与 Android hht_ctx4.conf 保持一致
+    // 注意：这与客户端发送阈值 BYTES_PER_FRAME (640) 是不同的概念
     cJSON_AddNumberToObject(data, "chunk_size", 10240);
     cJSON_AddBoolToObject(data, "support_tts", true);
     cJSON_AddBoolToObject(data, "support_text2dcs", true);

@@ -219,15 +219,15 @@ bool AiSdkProtocol::SendAudio(std::unique_ptr<AudioStreamPacket> packet) {
                          packet->payload.begin(),
                          packet->payload.end());
 
-    // 达到 CHUNK_SIZE 时发送
-    // 与 Android hht_ctx4.conf 中的 chunk_size (10240) 保持一致
-    while (audio_buffer_.size() >= CHUNK_SIZE) {
-        // 发送一个 chunk
-        asr_.sendAudio(audio_buffer_.data(), CHUNK_SIZE);
+    // 达到 BYTES_PER_FRAME 时发送
+    // 与 Android RealTimeUploader.BYTES_PER_FRAME (640 字节) 保持一致
+    while (audio_buffer_.size() >= BYTES_PER_FRAME) {
+        // 发送一个帧
+        asr_.sendAudio(audio_buffer_.data(), BYTES_PER_FRAME);
 
         // 移除已发送的数据
         audio_buffer_.erase(audio_buffer_.begin(),
-                           audio_buffer_.begin() + CHUNK_SIZE);
+                           audio_buffer_.begin() + BYTES_PER_FRAME);
     }
 
     return true;

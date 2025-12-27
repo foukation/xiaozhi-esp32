@@ -128,11 +128,13 @@ private:
     // ai_sdk 语音助手单例引用
     ai_sdk::AsrDialogue& asr_;
 
-    // 音频缓冲区（用于积累 Opus 数据到 chunk_size）
+    // 音频缓冲区（用于积累 Opus 数据到发送阈值）
     std::vector<uint8_t> audio_buffer_;
 
-    // chunk_size：与 Android hht_ctx4.conf 保持一致
-    static constexpr size_t CHUNK_SIZE = 10240;
+    // 发送阈值：与 Android RealTimeUploader.BYTES_PER_FRAME 保持一致
+    // Android: BYTES_PER_FRAME = (BYTES_PER_MS * FRAME_MS) / 8 = (32 * 160) / 8 = 640 字节
+    // 注意：这是客户端发送阈值，不是服务器协议参数 chunk_size
+    static constexpr size_t BYTES_PER_FRAME = 640;
 
     /**
      * @brief 设置 ai_sdk 回调
