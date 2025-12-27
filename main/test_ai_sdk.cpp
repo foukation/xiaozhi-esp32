@@ -485,11 +485,12 @@ static void test_device_information() {
         vTaskDelay(pdMS_TO_TICKS(3000));
 
         // ============================================
-        // 测试 4: 语音助手连接（新增）
-        // 在数据上报后测试语音助手模块的ASR和对话功能
+        // 测试 4: 语音助手连接（暂时禁用）
+        // 启用 CONFIG_USE_AI_SDK_PROTOCOL 后，AiSdkProtocol 会使用 AsrDialogue 单例
+        // 如果同时运行此测试，会导致重复连接冲突
         // ============================================
-        ESP_LOGI(TAG, "Test 4: Voice Assistant Connection");
-        test_voice_assistant();
+        // ESP_LOGI(TAG, "Test 4: Voice Assistant Connection");
+        // test_voice_assistant();
 
         },
         [](const std::string& error) {
