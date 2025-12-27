@@ -71,11 +71,11 @@ public:
         // 锁只在检查状态时持有，检查完毕后立即释放
         // 这样可以避免后续等待信号量时发生死锁
         {
-            std::lock_guard<std::mutex> lock(*state_mutex_);
-            if (is_recognizing_) {
-                ESP_LOGW(TAG, "Already recognizing, cannot start again");
-                return false;
-            }
+        std::lock_guard<std::mutex> lock(*state_mutex_);
+        if (is_recognizing_) {
+            ESP_LOGW(TAG, "Already recognizing, cannot start again");
+            return false;
+        }
         }  // ← 锁在这里自动释放
 
         ESP_LOGI(TAG, "Starting ASR recognition...");
@@ -156,6 +156,8 @@ public:
                     // 通知上层发生错误
                     if (error_callback_) {
                         error_callback_(-1, "WebSocket error: " + message);
+                        // 对应 Android: Timber.tag(TAG).e("错误: code=$code, message=$message")
+                        ESP_LOGE(TAG, "错误: code=-1, message=WebSocket error: %s", message.c_str());
                     }
                     break;
 
@@ -222,27 +224,27 @@ public:
         {
             std::lock_guard<std::mutex> lock(*state_mutex_);
 
-            // 检查是否真的连接成功
-            if (!is_connected_) {
-                ESP_LOGE(TAG, "Connection failed");
-                websocket_.disconnect();
-                if (error_callback_) {
-                    error_callback_(-1, "Connection failed");
-                }
-                return false;
+        // 检查是否真的连接成功
+        if (!is_connected_) {
+            ESP_LOGE(TAG, "Connection failed");
+            websocket_.disconnect();
+            if (error_callback_) {
+                error_callback_(-1, "Connection failed");
             }
+            return false;
+        }
 
             // 标记为识别中状态
             is_recognizing_ = true;
         }  // ← 锁在这里自动释放
-
-        ESP_LOGI(TAG, "WebSocket connected successfully!");
 
         // ========================================
         // 第10步：调用连接成功回调（对应 Android onConnected()）
         // ========================================
         if (connected_callback_) {
             connected_callback_();
+            // 对应 Android: Timber.tag(TAG).d("wss connected:")
+            ESP_LOGI(TAG, "wss connected:");
         }
 
         // ========================================
@@ -251,8 +253,6 @@ public:
         // 发送完整的 Start Signal，包含设备信息和配置参数
         // 参考 Android DealSotaOne.createStartSignal()
         sendStartSignal();
-
-        ESP_LOGI(TAG, "ASR recognition started successfully");
 
         // TODO: 第12步：启动接收任务（处理服务器响应）
         // xTaskCreate(ReceiveTaskEntry, "asr_receive", RECEIVE_TASK_STACK, this, ...);
@@ -278,8 +278,8 @@ public:
 
         // 先加锁更新状态
         {
-            std::lock_guard<std::mutex> lock(*state_mutex_);
-            is_connected_ = true;
+        std::lock_guard<std::mutex> lock(*state_mutex_);
+        is_connected_ = true;
             ESP_LOGI(TAG, "onConnected: is_connected_ = true");
         }  // ← 锁在这里释放
 
@@ -375,8 +375,6 @@ public:
      * 注意：停止操作可能需要100-500ms，应考虑异步实现。
      */
     void stop() {
-        ESP_LOGI(TAG, "Stopping ASR recognition...");
-
         // 检查当前状态
         {
             std::lock_guard<std::mutex> lock(*state_mutex_);
@@ -389,21 +387,26 @@ public:
         // 发送 Finish Signal（与 Android 一致）
         // 通知服务器停止识别
         std::string finish_msg = R"({"type": "finish"})";
-        ESP_LOGI(TAG, "Sending Finish Signal: %s", finish_msg.c_str());
+
+        // 获取时间戳（秒.毫秒格式，与 Android 对齐）
+        double time_sec = (double)esp_timer_get_time() / 1000000.0;
+
+        // 对应 Android: Timber.tag(TAG).d("[sendAudioData] ${System.currentTimeMillis() / 1000.0} Sending finish signal")
+        ESP_LOGI(TAG, "[sendAudioData] %.3f Sending finish signal", time_sec);
 
         if (websocket_.sendText(finish_msg)) {
-            ESP_LOGI(TAG, "Finish Signal sent successfully");
+            // 对应 Android: Timber.tag(TAG).d("[sendAudioData] Finish signal sent successfully")
+            ESP_LOGI(TAG, "[sendAudioData] Finish signal sent successfully");
 
             // 等待服务器响应（最多 2 秒）
             // 给服务器时间处理并返回最终结果
-            ESP_LOGI(TAG, "Waiting for server response (2 seconds)...");
             vTaskDelay(pdMS_TO_TICKS(2000));
         } else {
-            ESP_LOGW(TAG, "Failed to send Finish Signal");
+            // 对应 Android: Timber.tag(TAG).d("[sendAudioData] Failed to send finish signal")
+            ESP_LOGW(TAG, "[sendAudioData] Failed to send finish signal");
         }
 
         // 断开 WebSocket 连接
-        ESP_LOGI(TAG, "Disconnecting WebSocket...");
         websocket_.disconnect();
 
         // 重置状态变量
@@ -415,11 +418,10 @@ public:
 
         // 调用完成回调
         if (complete_callback_) {
-            ESP_LOGI(TAG, "Calling complete callback");
             complete_callback_();
+            // 对应 Android: Timber.tag(TAG).d("识别完成")
+            ESP_LOGI(TAG, "识别完成");
         }
-
-        ESP_LOGI(TAG, "ASR recognition stopped successfully");
     }
 
     /**
@@ -677,16 +679,26 @@ void AsrDialogue::Impl::ReceiveTaskEntry(void* param) {
 
 // 消息解析函数实现
 // 参考 Android ASRIntelligentDialogue.dialogueResultParseDialogueResult() 实现
+// 日志格式与 Android DealSotaOne.onMessage() 完全对齐
 void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
     // 将 payload 转换为字符串（用于日志和解析）
     std::string json_str(reinterpret_cast<const char*>(payload), len);
 
+    // ========================================
+    // 日志：[WebSocket.onMessage] Response: $text
+    // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage] Response: $text")
+    // ========================================
+    ESP_LOGI(TAG, "[WebSocket.onMessage] Response: %s", json_str.c_str());
+
     // 解析 JSON
     cJSON* root = cJSON_Parse(json_str.c_str());
     if (!root) {
-        ESP_LOGE(TAG, "Failed to parse JSON message: %s", json_str.c_str());
+        // 对应 Android: Timber.tag(TAG).e("[WebSocket.onMessage] Error parsing message: ${e.message}")
+        ESP_LOGE(TAG, "[WebSocket.onMessage] Error parsing message: JSON parse failed");
         if (error_callback_) {
-            error_callback_(-1, "Failed to parse JSON message");
+            error_callback_(-1, "Error parsing message: JSON parse failed");
+            // 对应 Android: Timber.tag(TAG).e("错误: code=$code, message=$message")
+            ESP_LOGE(TAG, "错误: code=-1, message=Error parsing message");
         }
         return;
     }
@@ -694,13 +706,12 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
     // 获取消息类型
     cJSON* type_item = cJSON_GetObjectItem(root, "type");
     if (!type_item || !cJSON_IsString(type_item)) {
-        ESP_LOGW(TAG, "Message missing 'type' field: %s", json_str.c_str());
+        ESP_LOGW(TAG, "[WebSocket.onMessage] Message missing 'type' field");
         cJSON_Delete(root);
         return;
     }
 
     const char* type = type_item->valuestring;
-    ESP_LOGI(TAG, "Received message type: %s", type);
 
     // ========================================
     // 根据消息类型分发处理
@@ -709,29 +720,37 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
 
     if (strcmp(type, "mid_result") == 0) {
         // ASR 中间结果（实时识别）
-        // 对应 Android: listener?.onMidResult(result)
         cJSON* result = cJSON_GetObjectItem(root, "result");
         if (result && cJSON_IsString(result)) {
-            ESP_LOGI(TAG, "ASR mid_result: %s", result->valuestring);
+            // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.mid_result] $result")
+            ESP_LOGI(TAG, "[WebSocket.onMessage.mid_result] %s", result->valuestring);
+
             if (asr_callback_) {
                 AsrResult asr_result;
                 asr_result.text = result->valuestring;
                 asr_result.is_final = false;
                 asr_callback_(asr_result);
+
+                // 对应 Android: Timber.tag(TAG).d("实时识别结果: ", text)
+                ESP_LOGI(TAG, "实时识别结果: %s", result->valuestring);
             }
         }
     }
     else if (strcmp(type, "fin_result") == 0) {
         // ASR 最终结果
-        // 对应 Android: listener?.onFinalResult(result)
         cJSON* result = cJSON_GetObjectItem(root, "result");
         if (result && cJSON_IsString(result)) {
-            ESP_LOGI(TAG, "ASR fin_result: %s", result->valuestring);
+            // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.fin_result] $result")
+            ESP_LOGI(TAG, "[WebSocket.onMessage.fin_result] %s", result->valuestring);
+
             if (asr_callback_) {
                 AsrResult asr_result;
                 asr_result.text = result->valuestring;
                 asr_result.is_final = true;
                 asr_callback_(asr_result);
+
+                // 对应 Android: Timber.tag(TAG).d("最终识别结果: ", text)
+                ESP_LOGI(TAG, "最终识别结果: %s", result->valuestring);
             }
         }
     }
@@ -740,6 +759,9 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
         // 智能对话结果
         // 对应 Android: dialogueResultParseDialogueResult(listener, result)
         // ========================================
+        // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.inside_rc] Data received")
+        ESP_LOGI(TAG, "[WebSocket.onMessage.inside_rc] Data received");
+
         cJSON* data = cJSON_GetObjectItem(root, "data");
         if (data) {
             // 解析公共字段
@@ -760,7 +782,6 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
             cJSON* directives = cJSON_GetObjectItem(data, "data");
             if (directives && cJSON_IsArray(directives)) {
                 // 遍历每个 directive，逐个调用回调
-                // 对应 Android: for (i in 0 until directives.length())
                 int directives_count = cJSON_GetArraySize(directives);
                 for (int i = 0; i < directives_count; i++) {
                     cJSON* directive = cJSON_GetArrayItem(directives, i);
@@ -774,8 +795,9 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
                     dialogue_result.qid = qid_str;
                     dialogue_result.is_end = is_end_val;
 
+                    std::string directive_name;
+
                     // 序列化 header 为 JSON 字符串
-                    // 对应 Android: DialogueResult(header = header, ...)
                     if (header) {
                         char* header_str = cJSON_PrintUnformatted(header);
                         if (header_str) {
@@ -786,13 +808,12 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
                         // 提取 name 作为便捷字段
                         cJSON* name = cJSON_GetObjectItem(header, "name");
                         if (name && cJSON_IsString(name)) {
-                            dialogue_result.directive = name->valuestring;
-                            ESP_LOGI(TAG, "Directive[%d]: %s", i, dialogue_result.directive.c_str());
+                            directive_name = name->valuestring;
+                            dialogue_result.directive = directive_name;
                         }
                     }
 
                     // 序列化 payload 为 JSON 字符串
-                    // 对应 Android: DialogueResult(payload = payload, ...)
                     if (payload_obj) {
                         char* payload_str = cJSON_PrintUnformatted(payload_obj);
                         if (payload_str) {
@@ -801,26 +822,99 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
                         }
                     }
 
+                    // ========================================
+                    // 按 directive 类型输出详细日志
+                    // 对应 Android dialogueResultParseDialogueResult() 中的 when(name)
+                    // ========================================
+                    if (directive_name == "RenderProcessing") {
+                        cJSON* percent = cJSON_GetObjectItem(payload_obj, "percent");
+                        if (percent && cJSON_IsNumber(percent)) {
+                            // 对应 Android: Timber.tag(TAG).d("isGenerating = true 进度 ：%s", percent)
+                            ESP_LOGI(TAG, "isGenerating = true 进度 ：%d", percent->valueint);
+                        }
+                    } else if (directive_name == "Nlu") {
+                        cJSON* nlu = cJSON_GetObjectItem(payload_obj, "nlu");
+                        if (nlu) {
+                            char* nlu_str = cJSON_PrintUnformatted(nlu);
+                            if (nlu_str) {
+                                // 对应 Android: Timber.tag(TAG).d("意图 ：%s", nlu?.toString())
+                                ESP_LOGI(TAG, "意图 ：%s", nlu_str);
+                                free(nlu_str);
+                            }
+                        }
+                    } else if (directive_name == "NluTag") {
+                        cJSON* domain = cJSON_GetObjectItem(payload_obj, "domian");  // 注意：Android 拼写是 "domian"
+                        cJSON* intent = cJSON_GetObjectItem(payload_obj, "intent");
+                        // 对应 Android: Timber.tag(TAG).d("NluTag = domain: $domain intent: $intent")
+                        ESP_LOGI(TAG, "NluTag = domain: %s intent: %s",
+                                 domain && cJSON_IsString(domain) ? domain->valuestring : "",
+                                 intent && cJSON_IsString(intent) ? intent->valuestring : "");
+                    } else if (directive_name == "RenderMultiImageCard") {
+                        cJSON* images = cJSON_GetObjectItem(payload_obj, "images");
+                        if (images && cJSON_IsArray(images) && cJSON_GetArraySize(images) > 0) {
+                            cJSON* first_img = cJSON_GetArrayItem(images, 0);
+                            if (first_img) {
+                                cJSON* url = cJSON_GetObjectItem(first_img, "url");
+                                if (url && cJSON_IsString(url)) {
+                                    // 对应 Android: Timber.tag(TAG).d("percent = 100 图片 ：%s", pic)
+                                    ESP_LOGI(TAG, "percent = 100 图片 ：%s", url->valuestring);
+                                }
+                            }
+                        }
+                    } else if (directive_name == "Play") {
+                        cJSON* audioItem = cJSON_GetObjectItem(payload_obj, "audioItem");
+                        if (audioItem) {
+                            cJSON* stream = cJSON_GetObjectItem(audioItem, "stream");
+                            cJSON* extension = cJSON_GetObjectItem(audioItem, "extension");
+                            const char* mediaUrl = "";
+                            const char* albumName = "";
+                            if (stream) {
+                                cJSON* url = cJSON_GetObjectItem(stream, "url");
+                                if (url && cJSON_IsString(url)) mediaUrl = url->valuestring;
+                            }
+                            if (extension && cJSON_IsString(extension)) albumName = extension->valuestring;
+                            // 对应 Android: Timber.tag(TAG).d("Play = mediaUrl: $mediaUrl albumName: $albumName")
+                            ESP_LOGI(TAG, "Play = mediaUrl: %s albumName: %s", mediaUrl, albumName);
+                        }
+                    } else if (directive_name == "RenderStreamCard") {
+                        cJSON* answer = cJSON_GetObjectItem(payload_obj, "answer");
+                        if (answer && cJSON_IsString(answer)) {
+                            // 对应 Android: Timber.tag(TAG).d("answer content ：%s", text)
+                            ESP_LOGI(TAG, "answer content ：%s", answer->valuestring);
+                        }
+                    } else if (directive_name == "Speak") {
+                        cJSON* url = cJSON_GetObjectItem(payload_obj, "url");
+                        // 对应 Android: Timber.tag(TAG).d("Speak = qid: $qid ttlUrl: $ttlUrl")
+                        ESP_LOGI(TAG, "Speak = qid: %s ttlUrl: %s",
+                                 qid_str.c_str(),
+                                 url && cJSON_IsString(url) ? url->valuestring : "");
+                    } else if (!directive_name.empty()) {
+                        // 对应 Android: Timber.tag(TAG).d("未处理的消息类型: %s, payload: %s", name, payload)
+                        ESP_LOGD(TAG, "未处理的消息类型: %s, payload: %s",
+                                 directive_name.c_str(), dialogue_result.payload.c_str());
+                    }
+
                     // 每个 directive 都调用一次回调
-                    // 对应 Android: listener?.onDialogueResult(DialogueResult(...))
                     if (dialogue_callback_) {
                         dialogue_callback_(dialogue_result);
+                        // 对应 Android: Timber.tag(TAG).d("智能对话结果: ", result)
+                        ESP_LOGI(TAG, "智能对话结果: qid=%s, directive=%s",
+                                 qid_str.c_str(), directive_name.c_str());
                     }
                 }
             } else {
                 // 没有 directives 数组时也调用回调（兼容处理）
-                // 对应 Android: if (directives == null) { listener?.onDialogueResult(...) }
                 DialogueResult dialogue_result;
                 dialogue_result.qid = qid_str;
                 dialogue_result.is_end = is_end_val;
                 if (dialogue_callback_) {
                     dialogue_callback_(dialogue_result);
+                    ESP_LOGI(TAG, "智能对话结果: qid=%s, is_end=%d", qid_str.c_str(), is_end_val);
                 }
             }
 
             // ========================================
             // is_end == 1 时解析 assistant_answer
-            // 对应 Android: if (isEnd == 1) { ... listener?.onDialogueResult(...) }
             // ========================================
             if (is_end_val == 1) {
                 cJSON* assistant_answer = cJSON_GetObjectItem(data, "assistant_answer");
@@ -828,7 +922,6 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
                     std::string answer_content = assistant_answer->valuestring;
 
                     // 尝试解析 assistant_answer 中的 content 字段
-                    // 对应 Android: getAnswer(assistantAnswer)
                     cJSON* answer_json = cJSON_Parse(answer_content.c_str());
                     if (answer_json) {
                         cJSON* content = cJSON_GetObjectItem(answer_json, "content");
@@ -838,7 +931,8 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
                         cJSON_Delete(answer_json);
                     }
 
-                    ESP_LOGI(TAG, "Session end, assistant_answer: %s", answer_content.c_str());
+                    // 对应 Android: Timber.tag(TAG).d(" isEnd == 1 answer content ：%s", content)
+                    ESP_LOGI(TAG, " isEnd == 1 answer content ：%s", answer_content.c_str());
 
                     // 发送 is_end=1 的回调
                     DialogueResult end_result;
@@ -854,17 +948,21 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
         }
     }
     else if (strcmp(type, "ready") == 0) {
-        // 服务器准备就绪
-        ESP_LOGI(TAG, "Server ready");
+        // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.${json.optString("type")}] Received")
+        ESP_LOGI(TAG, "[WebSocket.onMessage.ready] Received");
     }
     else if (strcmp(type, "dcs_decide") == 0) {
         // 决策消息，检查 end 标志
-        // 对应 Android: if (json.optInt("end", 0) == 1) { ... }
         cJSON* end = cJSON_GetObjectItem(root, "end");
         if (end && cJSON_IsNumber(end) && end->valueint == 1) {
-            ESP_LOGI(TAG, "Session complete (dcs_decide end=1)");
+            // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.dcs_decide] End flag received")
+            ESP_LOGI(TAG, "[WebSocket.onMessage.dcs_decide] End flag received");
+            // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.dcs_decide] Stop receiving")
+            ESP_LOGI(TAG, "[WebSocket.onMessage.dcs_decide] Stop receiving");
             if (complete_callback_) {
                 complete_callback_();
+                // 对应 Android: Timber.tag(TAG).d("识别完成")
+                ESP_LOGI(TAG, "识别完成");
             }
         }
     }
@@ -873,6 +971,11 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
         // 处理独立的 directive 消息
         // 对应 Android: if (text.contains("directive")) { ... }
         // ========================================
+        // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.directive] Directive received:")
+        ESP_LOGI(TAG, "[WebSocket.onMessage.directive] Directive received:");
+        // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.directive] Content: $text")
+        ESP_LOGI(TAG, "[WebSocket.onMessage.directive] Content: %s", json_str.c_str());
+
         cJSON* directive = cJSON_GetObjectItem(root, "directive");
         if (directive) {
             cJSON* header = cJSON_GetObjectItem(directive, "header");
@@ -893,7 +996,9 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
                     name && cJSON_IsString(name)) {
                     dialogue_result.directive = std::string(namespace_item->valuestring) +
                                                 "." + name->valuestring;
-                    ESP_LOGI(TAG, "Standalone directive: %s", dialogue_result.directive.c_str());
+                    // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.directive] Namespace: $namespace, Name: $name")
+                    ESP_LOGI(TAG, "[WebSocket.onMessage.directive] Namespace: %s, Name: %s",
+                             namespace_item->valuestring, name->valuestring);
                 }
             }
 
@@ -901,6 +1006,8 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
                 char* payload_str = cJSON_PrintUnformatted(payload_obj);
                 if (payload_str) {
                     dialogue_result.payload = payload_str;
+                    // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.directive] Payload: $payloadMap")
+                    ESP_LOGI(TAG, "[WebSocket.onMessage.directive] Payload: %s", payload_str);
                     free(payload_str);
                 }
             }
@@ -912,7 +1019,7 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
     }
     else {
         // 未知消息类型
-        ESP_LOGD(TAG, "Unknown message type: %s", type);
+        ESP_LOGD(TAG, "[WebSocket.onMessage] Unknown type: %s", type);
     }
 
     // 释放 JSON 对象
@@ -920,13 +1027,12 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
 }
 
 // 发送 Start Signal 实现
+// 日志格式与 Android DealSotaOne.sendAudioData() 对齐
 void AsrDialogue::Impl::sendStartSignal() {
-    ESP_LOGI(TAG, "Building Start Signal...");
-
     // 创建根 JSON 对象
     cJSON* root = cJSON_CreateObject();
     if (!root) {
-        ESP_LOGE(TAG, "Failed to create JSON root object");
+        ESP_LOGE(TAG, "[sendAudioData] Failed to create JSON root object");
         return;
     }
 
@@ -936,7 +1042,7 @@ void AsrDialogue::Impl::sendStartSignal() {
     // 创建 data 对象
     cJSON* data = cJSON_CreateObject();
     if (!data) {
-        ESP_LOGE(TAG, "Failed to create JSON data object");
+        ESP_LOGE(TAG, "[sendAudioData] Failed to create JSON data object");
         cJSON_Delete(root);
         return;
     }
@@ -1016,19 +1122,29 @@ void AsrDialogue::Impl::sendStartSignal() {
     // 序列化 JSON
     char* json_str = cJSON_PrintUnformatted(root);
     if (json_str) {
-        ESP_LOGI(TAG, "Sending Start Signal: %s", json_str);
+        // 获取时间戳（秒.毫秒格式，与 Android 对齐）
+        double time_sec = (double)esp_timer_get_time() / 1000000.0;
+
+        // 对应 Android: Timber.tag(TAG).d("[sendAudioData] ${System.currentTimeMillis() / 1000.0} Sending start signal:")
+        ESP_LOGI(TAG, "[sendAudioData] %.3f Sending start signal:", time_sec);
+
+        // 对应 Android: Timber.tag(TAG).d("[sendAudioData] Start signal content: ${startSignal.toString(4)}")
+        // 注意：Android 使用 toString(4) 格式化输出，这里使用紧凑格式
+        ESP_LOGI(TAG, "[sendAudioData] Start signal content: %s", json_str);
 
         // 发送到服务器
         if (!websocket_.sendText(json_str)) {
-            ESP_LOGW(TAG, "Failed to send Start Signal");
+            // 对应 Android: Timber.tag(TAG).d("[sendAudioData] Failed to send start signal")
+            ESP_LOGW(TAG, "[sendAudioData] Failed to send start signal");
         } else {
-            ESP_LOGI(TAG, "Start Signal sent successfully");
+            // 对应 Android: Timber.tag(TAG).d("[sendAudioData] Start signal sent successfully")
+            ESP_LOGI(TAG, "[sendAudioData] Start signal sent successfully");
         }
 
         // 释放 JSON 字符串
         free(json_str);
     } else {
-        ESP_LOGE(TAG, "Failed to serialize JSON");
+        ESP_LOGE(TAG, "[sendAudioData] Failed to serialize JSON");
     }
 
     // 释放 JSON 对象

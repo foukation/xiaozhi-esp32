@@ -8,6 +8,7 @@
 
 #include "ai_sdk/asr_websocket.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 // FreeRTOS头文件
 #include "freertos/FreeRTOS.h"
@@ -236,7 +237,12 @@ void AsrWebsocket::EventHandler(void* event_handler_arg,
     switch (event_id) {
         case WEBSOCKET_EVENT_CONNECTED:
             {
-                ESP_LOGI(TAG, "WebSocket connected");
+                // 获取时间戳（秒.毫秒格式，与 Android 对齐）
+                double time_sec = (double)esp_timer_get_time() / 1000000.0;
+
+                // 对应 Android: Timber.tag(TAG).d("${System.currentTimeMillis() / 1000.0} WebSocket connected successfully")
+                ESP_LOGI(TAG, "%.3f WebSocket connected successfully", time_sec);
+
                 websocket->is_connected_ = true;
                 websocket->is_connecting_ = false;
 
