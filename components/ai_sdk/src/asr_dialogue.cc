@@ -108,20 +108,61 @@ public:
             xSemaphoreTake(connection_semaphore_, 0);  // 清空信号量
         }
 
-        // 第5步：建立WebSocket连接（异步）
-        // 注册消息回调，监听 "CONNECTED" 事件
-        websocket_.setMessageCallback([this](const uint8_t* data, size_t len, int type) {
-            // 只处理文本消息（type为0代表文本，1代表二进制）
-            if (type == 0) {
-                std::string msg(reinterpret_cast<const char*>(data), len);
-                ESP_LOGD(TAG, "Received message: %s", msg.c_str());
-                if (msg == "CONNECTED") {
-                    ESP_LOGI(TAG, "Received connection confirmation from WebSocket");
+        // 第5步：注册事件回调（处理连接成功、断开、错误事件）
+        // 通过 event_callback_ 接收底层 WebSocket 状态变化通知
+        websocket_.setEventCallback([this](int event_id, const std::string& message) {
+            // 根据事件类型处理不同情况
+            // event_id 对应 esp_websocket_client 的事件枚举值
+            ESP_LOGI(TAG, "Event: WebSocket event_id=%d ", event_id);
+            switch (event_id) {
+                case 1:  // WEBSOCKET_EVENT_CONNECTED
+                    ESP_LOGI(TAG, "Event: WebSocket connected");
                     this->onConnected();
-                }
+                    break;
+
+                case 2:  // WEBSOCKET_EVENT_DISCONNECTED
+                    ESP_LOGW(TAG, "Event: WebSocket disconnected - %s", message.c_str());
+                    this->onDisconnected(message);
+                    // 释放信号量，让 start() 立即返回失败（如果还在等待连接）
+                    if (connection_semaphore_ != nullptr) {
+                        xSemaphoreGive(connection_semaphore_);
+                    }
+                    break;
+
+                case 4:  // WEBSOCKET_EVENT_ERROR
+                    ESP_LOGE(TAG, "Event: WebSocket error - %s", message.c_str());
+                    // 释放信号量，让 start() 立即返回失败
+                    if (connection_semaphore_ != nullptr) {
+                        xSemaphoreGive(connection_semaphore_);
+                    }
+                    // 通知上层发生错误
+                    if (error_callback_) {
+                        error_callback_(-1, "WebSocket error: " + message);
+                    }
+                    break;
+
+                default:
+                    ESP_LOGD(TAG, "Event: Unknown event_id=%d, message=%s", event_id, message.c_str());
+                    break;
             }
         });
 
+        // 第6步：注册消息回调（处理服务器发送的数据）
+        // 用于接收 ASR 识别结果、对话响应等业务消息
+        websocket_.setMessageCallback([this](const uint8_t* data, size_t len, int type) {
+            // type: 1=文本消息, 2=二进制消息（WebSocket opcode）
+            if (type == 1) {
+                // 文本消息：JSON 格式的 ASR 结果或对话响应
+                std::string msg(reinterpret_cast<const char*>(data), len);
+                ESP_LOGD(TAG, "Received text message: %s", msg.c_str());
+                // TODO: 调用 parseMessage() 解析并分发到对应回调
+            } else if (type == 2) {
+                // 二进制消息：可能是音频数据等
+                ESP_LOGD(TAG, "Received binary message, len=%d", len);
+            }
+        });
+
+        // 第8步：发起 WebSocket 连接（异步）
         if (!websocket_.connect(config)) {
             ESP_LOGE(TAG, "Failed to initiate WebSocket connection");
             if (error_callback_) {
@@ -130,8 +171,9 @@ public:
             return false;
         }
 
-        // 第6步：等待连接成功（模拟 Android CountDownLatch.await()）
-        // 等待事件：EventHandler 在连接成功时 give() 信号量
+        // 第9步：等待连接成功（模拟 Android CountDownLatch.await()）
+        // 等待事件：event_callback_ 在连接成功时调用 onConnected()，释放信号量
+        // 如果连接失败或出错，event_callback_ 也会释放信号量，让等待立即返回
         ESP_LOGI(TAG, "Waiting for connection... (timeout=%d ms)", CONNECTION_TIMEOUT_MS);
         if (connection_semaphore_ != nullptr) {
             // 等待连接成功信号，最多30秒
@@ -157,12 +199,12 @@ public:
 
         ESP_LOGI(TAG, "WebSocket connected successfully!");
 
-        // 第7步：调用连接成功回调（对应 Android onConnected()）
+        // 第10步：调用连接成功回调（对应 Android onConnected()）
         if (connected_callback_) {
             connected_callback_();
         }
 
-        // 第8步：发送ASR配置参数
+        // 第11步：发送ASR配置参数
         // 格式与服务器要求的配置一致
         std::string asr_config = R"({
             "type": "config",
@@ -178,11 +220,11 @@ public:
             // 发送配置失败但继续（非致命错误）
         }
 
-        // 第9步：标记为识别中状态
+        // 第12步：标记为识别中状态
         is_recognizing_ = true;
         ESP_LOGI(TAG, "ASR recognition started successfully");
 
-        // TODO: 第10步：启动接收任务（处理服务器响应）
+        // TODO: 第13步：启动接收任务（处理服务器响应）
         // xTaskCreate(ReceiveTaskEntry, "asr_receive", RECEIVE_TASK_STACK, this, ...);
 
         return true;
@@ -191,8 +233,8 @@ public:
     /**
      * @brief WebSocket连接成功回调
      *
-     * 由 SetMessageCallback 在收到 "CONNECTED" 消息时调用
-     * EventHandler 在 WEBSOCKET_EVENT_CONNECTED 时发送 "CONNECTED"
+     * 由 event_callback_ 在收到 WEBSOCKET_EVENT_CONNECTED 事件时调用
+     * 负责更新连接状态并释放信号量，唤醒等待中的 start() 函数
      */
     void onConnected() {
         ESP_LOGI(TAG, "WebSocket connected");

@@ -216,19 +216,10 @@ void AsrWebsocket::EventHandler(void* event_handler_arg,
                 websocket->is_connected_ = true;
                 websocket->is_connecting_ = false;
 
-                // 调用事件回调
+                // 调用事件回调通知上层连接成功
+                // 上层（AsrDialogue）应通过 setEventCallback() 注册回调来处理连接事件
                 if (websocket->event_callback_) {
                     websocket->event_callback_(event_id, "Connected");
-                }
-
-                // 调用消息回调（通知上层）
-                if (websocket->message_callback_) {
-                    const char* msg = "CONNECTED";
-                    websocket->message_callback_(
-                        reinterpret_cast<const uint8_t*>(msg),
-                        strlen(msg),
-                        0  // 0表示文本消息
-                    );
                 }
             }
             break;
