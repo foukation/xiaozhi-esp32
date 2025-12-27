@@ -135,6 +135,12 @@ public:
                     if (connection_semaphore_ != nullptr) {
                         xSemaphoreGive(connection_semaphore_);
                     }
+                    // 对应 Android: WebSocketListener.onClosing() 中调用 listener?.onComplete()
+                    // WebSocket 断开时调用完成回调
+                    if (complete_callback_) {
+                        complete_callback_();
+                        ESP_LOGI(TAG, "识别完成");
+                    }
                     break;
 
                 case WEBSOCKET_EVENT_ERROR:
@@ -143,10 +149,11 @@ public:
                         xSemaphoreGive(connection_semaphore_);
                     }
                     // 通知上层发生错误
+                    // 对应 Android: onFailure() 中 listener?.onError(1, t.message)
+                    // 连接相关错误使用 code=1
                     if (error_callback_) {
-                        error_callback_(-1, "WebSocket error: " + message);
-                        // 对应 Android: Timber.tag(TAG).e("错误: code=$code, message=$message")
-                        ESP_LOGE(TAG, "错误: code=-1, message=WebSocket error: %s", message.c_str());
+                        error_callback_(1, "WebSocket error: " + message);
+                        ESP_LOGE(TAG, "错误: code=1, message=WebSocket error: %s", message.c_str());
                     }
                     break;
 
@@ -171,9 +178,11 @@ public:
         // 第7步：发起 WebSocket 连接（异步）
         // ========================================
         if (!websocket_.connect(config)) {
+            // 对应 Android: onFailure() 中 listener?.onError(1, t.message)
+            // 连接相关错误使用 code=1
             if (error_callback_) {
-                error_callback_(-1, "Failed to initiate WebSocket connection");
-                ESP_LOGE(TAG, "错误: code=-1, message=Failed to initiate WebSocket connection");
+                error_callback_(1, "Failed to initiate WebSocket connection");
+                ESP_LOGE(TAG, "错误: code=1, message=Failed to initiate WebSocket connection");
             }
             return false;
         }
@@ -191,9 +200,11 @@ public:
             // 等待连接成功信号，最多30秒
             if (xSemaphoreTake(connection_semaphore_, pdMS_TO_TICKS(CONNECTION_TIMEOUT_MS)) != pdTRUE) {
                 websocket_.disconnect();
+                // 对应 Android: onFailure() 中 listener?.onError(1, t.message)
+                // 连接超时使用 code=1
                 if (error_callback_) {
-                    error_callback_(-1, "Connection timeout");
-                    ESP_LOGE(TAG, "错误: code=-1, message=Connection timeout");
+                    error_callback_(1, "Connection timeout");
+                    ESP_LOGE(TAG, "错误: code=1, message=Connection timeout");
                 }
                 return false;
             }
@@ -206,15 +217,17 @@ public:
         {
             std::lock_guard<std::mutex> lock(*state_mutex_);
 
-        // 检查是否真的连接成功
-        if (!is_connected_) {
-            websocket_.disconnect();
-            if (error_callback_) {
-                error_callback_(-1, "Connection failed");
-                    ESP_LOGE(TAG, "错误: code=-1, message=Connection failed");
+            // 检查是否真的连接成功
+            if (!is_connected_) {
+                websocket_.disconnect();
+                // 对应 Android: onFailure() 中 listener?.onError(1, t.message)
+                // 连接失败使用 code=1
+                if (error_callback_) {
+                    error_callback_(1, "Connection failed");
+                    ESP_LOGE(TAG, "错误: code=1, message=Connection failed");
+                }
+                return false;
             }
-            return false;
-        }
 
             // 标记为识别中状态
             is_recognizing_ = true;
@@ -378,6 +391,8 @@ public:
         }
 
         // 断开 WebSocket 连接
+        // 注意：complete_callback_ 会在 WEBSOCKET_EVENT_DISCONNECTED 事件中调用
+        // 对应 Android: WebSocketListener.onClosing() 中调用 listener?.onComplete()
         websocket_.disconnect();
 
         // 重置状态变量
@@ -385,13 +400,6 @@ public:
             std::lock_guard<std::mutex> lock(*state_mutex_);
             is_recognizing_ = false;
             is_connected_ = false;
-        }
-
-        // 调用完成回调
-        if (complete_callback_) {
-            complete_callback_();
-            // 对应 Android: Timber.tag(TAG).d("识别完成")
-            ESP_LOGI(TAG, "识别完成");
         }
     }
 
@@ -926,17 +934,14 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
     }
     else if (strcmp(type, "dcs_decide") == 0) {
         // 决策消息，检查 end 标志
+        // 注意：Android 在 dcs_decide end=1 时只输出日志，不调用 onComplete()
+        // complete_callback_ 会在 WEBSOCKET_EVENT_DISCONNECTED 事件中统一调用
         cJSON* end = cJSON_GetObjectItem(root, "end");
         if (end && cJSON_IsNumber(end) && end->valueint == 1) {
             // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.dcs_decide] End flag received")
             ESP_LOGI(TAG, "[WebSocket.onMessage.dcs_decide] End flag received");
             // 对应 Android: Timber.tag(TAG).d("[WebSocket.onMessage.dcs_decide] Stop receiving")
             ESP_LOGI(TAG, "[WebSocket.onMessage.dcs_decide] Stop receiving");
-            if (complete_callback_) {
-                complete_callback_();
-                // 对应 Android: Timber.tag(TAG).d("识别完成")
-                ESP_LOGI(TAG, "识别完成");
-            }
         }
     }
     else if (strstr(json_str.c_str(), "directive") != nullptr) {
