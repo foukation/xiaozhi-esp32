@@ -78,26 +78,25 @@ public:
         }
         }  // ← 锁在这里自动释放
 
-        ESP_LOGI(TAG, "Starting ASR recognition...");
-
         // ========================================
         // 第2步：构建完整WebSocket URL（与Android一致）
         // ========================================
         // 基础URL: wss://ivs.chinamobiledevice.com:11443/app-ws/v2/asr
         std::string base_url = std::string(ApiConfig::WSS_WEBSOCKET_ASR_BASE_URL) +
                               ApiConfig::ASR_INTELLIGENT_DIALOGUE_API;
-        ESP_LOGI(TAG, "Base URL: %s", base_url.c_str());
 
         // 添加参数和签名（sn, deviceNo, productKey, ts, sign等）
         std::string ws_url = AssistUtils::wssParameter(base_url);
         if (ws_url.empty()) {
-            ESP_LOGE(TAG, "Failed to build WebSocket URL");
             if (error_callback_) {
                 error_callback_(-1, "Failed to build WebSocket URL");
+                // 对应 Android: Timber.tag(TAG).e("错误: code=$code, message=$message")
+                ESP_LOGE(TAG, "错误: code=-1, message=Failed to build WebSocket URL");
             }
             return false;
         }
-        ESP_LOGI(TAG, "Full URL: %s", ws_url.c_str());
+        // 对应 Android: Timber.tag(TAG).d("WS_URL ：%s", WS_URL)
+        ESP_LOGI(TAG, "WS_URL ：%s", ws_url.c_str());
 
         // ========================================
         // 第3步：配置WebSocket参数（与Android超时配置一致）
@@ -111,10 +110,6 @@ public:
         config.network_timeout_ms = 30000;   // 30秒
         config.ping_interval_ms = 30000;     // 30秒（心跳）
         config.buffer_size = 4096;           // 4KB缓冲区
-        ESP_LOGI(TAG, "WebSocket config created: timeout=%d/%d/%d ms",
-                 config.connect_timeout_ms,
-                 config.network_timeout_ms,
-                 config.ping_interval_ms);
 
         // ========================================
         // 第4步：重置信号量（确保在获取前为0）
@@ -129,17 +124,12 @@ public:
         // 通过 event_callback_ 接收底层 WebSocket 状态变化通知
         // 注意：回调函数在 WebSocket 事件线程中执行，不是 start() 所在的线程
         websocket_.setEventCallback([this](int event_id, const std::string& message) {
-            // event_id 对应 esp_websocket_client 的事件枚举值
-            // 使用枚举值而不是硬编码数字，确保与 ESP-IDF 版本兼容
-            ESP_LOGI(TAG, "Event: WebSocket event_id=%d", event_id);
             switch (event_id) {
                 case WEBSOCKET_EVENT_CONNECTED:
-                    ESP_LOGI(TAG, "Event: WebSocket connected");
                     this->onConnected();
                     break;
 
                 case WEBSOCKET_EVENT_DISCONNECTED:
-                    ESP_LOGW(TAG, "Event: WebSocket disconnected - %s", message.c_str());
                     this->onDisconnected(message);
                     // 释放信号量，让 start() 立即返回失败（如果还在等待连接）
                     if (connection_semaphore_ != nullptr) {
@@ -148,7 +138,6 @@ public:
                     break;
 
                 case WEBSOCKET_EVENT_ERROR:
-                    ESP_LOGE(TAG, "Event: WebSocket error - %s", message.c_str());
                     // 释放信号量，让 start() 立即返回失败
                     if (connection_semaphore_ != nullptr) {
                         xSemaphoreGive(connection_semaphore_);
@@ -162,7 +151,6 @@ public:
                     break;
 
                 default:
-                    ESP_LOGD(TAG, "Event: Unknown event_id=%d, message=%s", event_id, message.c_str());
                     break;
             }
         });
@@ -172,25 +160,20 @@ public:
         // ========================================
         // 用于接收 ASR 识别结果、对话响应等业务消息
         websocket_.setMessageCallback([this](const uint8_t* data, size_t len, int type) {
-            // type: 1=文本消息, 2=二进制消息（WebSocket opcode）
             if (type == 1) {
                 // 文本消息：JSON 格式的 ASR 结果或对话响应
-                ESP_LOGI(TAG, "Received text message, len=%d", len);
-                // 调用 parseMessage() 解析并分发到对应回调
                 this->parseMessage(data, len);
-            } else if (type == 2) {
-                // 二进制消息：可能是音频数据等
-                ESP_LOGD(TAG, "Received binary message, len=%d", len);
             }
+            // 二进制消息不处理
         });
 
         // ========================================
         // 第7步：发起 WebSocket 连接（异步）
         // ========================================
         if (!websocket_.connect(config)) {
-            ESP_LOGE(TAG, "Failed to initiate WebSocket connection");
             if (error_callback_) {
                 error_callback_(-1, "Failed to initiate WebSocket connection");
+                ESP_LOGE(TAG, "错误: code=-1, message=Failed to initiate WebSocket connection");
             }
             return false;
         }
@@ -204,14 +187,13 @@ public:
         //
         // 重要：此时没有持有 state_mutex_ 锁！
         // 这样 onConnected() 可以获取锁并释放信号量，不会发生死锁
-        ESP_LOGI(TAG, "Waiting for connection... (timeout=%d ms)", CONNECTION_TIMEOUT_MS);
         if (connection_semaphore_ != nullptr) {
             // 等待连接成功信号，最多30秒
             if (xSemaphoreTake(connection_semaphore_, pdMS_TO_TICKS(CONNECTION_TIMEOUT_MS)) != pdTRUE) {
-                ESP_LOGE(TAG, "Connection timeout after %d ms", CONNECTION_TIMEOUT_MS);
                 websocket_.disconnect();
                 if (error_callback_) {
                     error_callback_(-1, "Connection timeout");
+                    ESP_LOGE(TAG, "错误: code=-1, message=Connection timeout");
                 }
                 return false;
             }
@@ -226,10 +208,10 @@ public:
 
         // 检查是否真的连接成功
         if (!is_connected_) {
-            ESP_LOGE(TAG, "Connection failed");
             websocket_.disconnect();
             if (error_callback_) {
                 error_callback_(-1, "Connection failed");
+                    ESP_LOGE(TAG, "错误: code=-1, message=Connection failed");
             }
             return false;
         }
@@ -274,20 +256,16 @@ public:
      * 这样可以确保 start() 被唤醒后检查 is_connected_ 时，状态已经是 true
      */
     void onConnected() {
-        ESP_LOGI(TAG, "onConnected: WebSocket connected, updating state...");
-
         // 先加锁更新状态
         {
         std::lock_guard<std::mutex> lock(*state_mutex_);
         is_connected_ = true;
-            ESP_LOGI(TAG, "onConnected: is_connected_ = true");
         }  // ← 锁在这里释放
 
         // 释放信号量，唤醒等待的 start() 函数
         // 注意：必须在锁释放之后再释放信号量
         // 这样 start() 被唤醒后可以立即获取锁检查状态
         if (connection_semaphore_ != nullptr) {
-            ESP_LOGI(TAG, "onConnected: Releasing semaphore to wake up start()");
             xSemaphoreGive(connection_semaphore_);
         }
     }
@@ -297,8 +275,6 @@ public:
      * @param error 错误信息
      */
     void onDisconnected(const std::string& error = "") {
-        ESP_LOGW(TAG, "WebSocket disconnected: %s", error.c_str());
-
         std::lock_guard<std::mutex> lock(*state_mutex_);
         is_connected_ = false;
     }
@@ -327,15 +303,10 @@ public:
 
         // 创建连接信号量（初始为0，用于连接同步）
         connection_semaphore_ = xSemaphoreCreateBinary();
-        if (connection_semaphore_ == nullptr) {
-            ESP_LOGE(TAG, "Failed to create connection semaphore");
-        }
 
         is_recognizing_ = false;
         is_connected_ = false;
         receive_task_ = nullptr;
-
-        ESP_LOGI(TAG, "AsrDialogue Impl initialized successfully");
     }
 
     /**
@@ -498,8 +469,6 @@ public:
         dialogue_callback_ = dialogue_cb;
         error_callback_ = error_cb;
         complete_callback_ = complete_cb;
-
-        ESP_LOGI(TAG, "Callbacks set successfully");
     }
 
 private:
@@ -764,6 +733,14 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
 
         cJSON* data = cJSON_GetObjectItem(root, "data");
         if (data) {
+            // 对应 Android: Timber.tag(TAG).d("智能对话结果: ", result)
+            // 输出完整的 data JSON
+            char* data_json_str = cJSON_PrintUnformatted(data);
+            if (data_json_str) {
+                ESP_LOGI(TAG, "智能对话结果: %s", data_json_str);
+                free(data_json_str);
+            }
+
             // 解析公共字段
             std::string qid_str;
             int is_end_val = 0;
@@ -897,9 +874,6 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
                     // 每个 directive 都调用一次回调
                     if (dialogue_callback_) {
                         dialogue_callback_(dialogue_result);
-                        // 对应 Android: Timber.tag(TAG).d("智能对话结果: ", result)
-                        ESP_LOGI(TAG, "智能对话结果: qid=%s, directive=%s",
-                                 qid_str.c_str(), directive_name.c_str());
                     }
                 }
             } else {
@@ -909,7 +883,6 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
                 dialogue_result.is_end = is_end_val;
                 if (dialogue_callback_) {
                     dialogue_callback_(dialogue_result);
-                    ESP_LOGI(TAG, "智能对话结果: qid=%s, is_end=%d", qid_str.c_str(), is_end_val);
                 }
             }
 

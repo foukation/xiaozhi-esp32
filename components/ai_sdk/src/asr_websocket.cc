@@ -114,7 +114,6 @@ bool AsrWebsocket::connect(const AsrWebsocketConfig& config) {
     // 标记为连接中状态
     // 在此状态下可以继续调用sendText/sendBinary，数据会被缓存
     is_connecting_ = true;
-    ESP_LOGI(TAG, "WebSocket client started, connecting to %s", config.url.c_str());
 
     xSemaphoreGive(connection_mutex_);
     return true;  // 成功启动连接流程（异步）
@@ -123,11 +122,8 @@ bool AsrWebsocket::connect(const AsrWebsocketConfig& config) {
 void AsrWebsocket::disconnect() {
     // 检查客户端是否存在
     if (!client_) {
-        ESP_LOGD(TAG, "No client to disconnect");
         return;
     }
-
-    ESP_LOGI(TAG, "Disconnecting WebSocket...");
 
     // 关闭 WebSocket 连接（等待最多 1 秒）
     esp_websocket_client_close(client_, pdMS_TO_TICKS(1000));
@@ -139,8 +135,6 @@ void AsrWebsocket::disconnect() {
     // 重置状态变量
     is_connected_ = false;
     is_connecting_ = false;
-
-    ESP_LOGI(TAG, "WebSocket disconnected and resources released");
 }
 
 bool AsrWebsocket::sendText(const std::string& text) {
@@ -164,7 +158,6 @@ bool AsrWebsocket::sendText(const std::string& text) {
         return false;
     }
 
-    ESP_LOGD(TAG, "Text sent successfully, len=%d", text.length());
     return true;
 }
 
@@ -189,7 +182,6 @@ bool AsrWebsocket::sendBinary(const uint8_t* data, size_t len) {
         return false;
     }
 
-    ESP_LOGD(TAG, "Binary sent successfully, len=%d", len);
     return true;
 }
 
@@ -256,7 +248,6 @@ void AsrWebsocket::EventHandler(void* event_handler_arg,
 
         case WEBSOCKET_EVENT_DISCONNECTED:
             {
-                ESP_LOGW(TAG, "WebSocket disconnected");
                 websocket->is_connected_ = false;
                 websocket->is_connecting_ = false;
 
@@ -281,7 +272,6 @@ void AsrWebsocket::EventHandler(void* event_handler_arg,
 
         case WEBSOCKET_EVENT_ERROR:
             {
-                ESP_LOGE(TAG, "WebSocket error");
                 websocket->is_connected_ = false;
                 websocket->is_connecting_ = false;
 
@@ -292,7 +282,6 @@ void AsrWebsocket::EventHandler(void* event_handler_arg,
             break;
 
         default:
-            ESP_LOGD(TAG, "Unhandled WebSocket event: %ld", event_id);
             break;
     }
 }
