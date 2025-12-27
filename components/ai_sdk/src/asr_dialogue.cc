@@ -60,18 +60,25 @@ public:
      * 线程安全：使用state_mutex_保护状态变量。
      */
     bool start() {
-        // 加锁保护状态
-        std::lock_guard<std::mutex> lock(*state_mutex_);
-
-        // 第1步：检查状态（如果已在识别中，返回false）
-        if (is_recognizing_) {
-            ESP_LOGW(TAG, "Already recognizing, cannot start again");
-            return false;
-        }
+        // ========================================
+        // 第1步：加锁检查状态
+        // ========================================
+        // 注意：这里使用代码块 {} 限制锁的作用范围
+        // 锁只在检查状态时持有，检查完毕后立即释放
+        // 这样可以避免后续等待信号量时发生死锁
+        {
+            std::lock_guard<std::mutex> lock(*state_mutex_);
+            if (is_recognizing_) {
+                ESP_LOGW(TAG, "Already recognizing, cannot start again");
+                return false;
+            }
+        }  // ← 锁在这里自动释放
 
         ESP_LOGI(TAG, "Starting ASR recognition...");
 
+        // ========================================
         // 第2步：构建完整WebSocket URL（与Android一致）
+        // ========================================
         // 基础URL: wss://ivs.chinamobiledevice.com:11443/app-ws/v2/asr
         std::string base_url = std::string(ApiConfig::WSS_WEBSOCKET_ASR_BASE_URL) +
                               ApiConfig::ASR_INTELLIGENT_DIALOGUE_API;
@@ -88,7 +95,9 @@ public:
         }
         ESP_LOGI(TAG, "Full URL: %s", ws_url.c_str());
 
+        // ========================================
         // 第3步：配置WebSocket参数（与Android超时配置一致）
+        // ========================================
         // - 连接超时：10秒
         // - 网络超时：30秒
         // - 心跳间隔：30秒
@@ -97,23 +106,27 @@ public:
         config.connect_timeout_ms = 10000;   // 10秒
         config.network_timeout_ms = 30000;   // 30秒
         config.ping_interval_ms = 30000;     // 30秒（心跳）
-        config.buffer_size = 4096;             // 4KB缓冲区
+        config.buffer_size = 4096;           // 4KB缓冲区
         ESP_LOGI(TAG, "WebSocket config created: timeout=%d/%d/%d ms",
                  config.connect_timeout_ms,
                  config.network_timeout_ms,
                  config.ping_interval_ms);
 
+        // ========================================
         // 第4步：重置信号量（确保在获取前为0）
+        // ========================================
         if (connection_semaphore_ != nullptr) {
             xSemaphoreTake(connection_semaphore_, 0);  // 清空信号量
         }
 
+        // ========================================
         // 第5步：注册事件回调（处理连接成功、断开、错误事件）
+        // ========================================
         // 通过 event_callback_ 接收底层 WebSocket 状态变化通知
+        // 注意：回调函数在 WebSocket 事件线程中执行，不是 start() 所在的线程
         websocket_.setEventCallback([this](int event_id, const std::string& message) {
-            // 根据事件类型处理不同情况
             // event_id 对应 esp_websocket_client 的事件枚举值
-            ESP_LOGI(TAG, "Event: WebSocket event_id=%d ", event_id);
+            ESP_LOGI(TAG, "Event: WebSocket event_id=%d", event_id);
             switch (event_id) {
                 case 1:  // WEBSOCKET_EVENT_CONNECTED
                     ESP_LOGI(TAG, "Event: WebSocket connected");
@@ -147,14 +160,16 @@ public:
             }
         });
 
+        // ========================================
         // 第6步：注册消息回调（处理服务器发送的数据）
+        // ========================================
         // 用于接收 ASR 识别结果、对话响应等业务消息
         websocket_.setMessageCallback([this](const uint8_t* data, size_t len, int type) {
             // type: 1=文本消息, 2=二进制消息（WebSocket opcode）
             if (type == 1) {
                 // 文本消息：JSON 格式的 ASR 结果或对话响应
                 std::string msg(reinterpret_cast<const char*>(data), len);
-                ESP_LOGD(TAG, "Received text message: %s", msg.c_str());
+                ESP_LOGI(TAG, "Received text message: %s", msg.c_str());
                 // TODO: 调用 parseMessage() 解析并分发到对应回调
             } else if (type == 2) {
                 // 二进制消息：可能是音频数据等
@@ -162,7 +177,9 @@ public:
             }
         });
 
-        // 第8步：发起 WebSocket 连接（异步）
+        // ========================================
+        // 第7步：发起 WebSocket 连接（异步）
+        // ========================================
         if (!websocket_.connect(config)) {
             ESP_LOGE(TAG, "Failed to initiate WebSocket connection");
             if (error_callback_) {
@@ -171,9 +188,15 @@ public:
             return false;
         }
 
-        // 第9步：等待连接成功（模拟 Android CountDownLatch.await()）
-        // 等待事件：event_callback_ 在连接成功时调用 onConnected()，释放信号量
+        // ========================================
+        // 第8步：等待连接成功
+        // ========================================
+        // 模拟 Android CountDownLatch.await()
+        // 等待事件：onConnected() 在连接成功时释放信号量
         // 如果连接失败或出错，event_callback_ 也会释放信号量，让等待立即返回
+        //
+        // 重要：此时没有持有 state_mutex_ 锁！
+        // 这样 onConnected() 可以获取锁并释放信号量，不会发生死锁
         ESP_LOGI(TAG, "Waiting for connection... (timeout=%d ms)", CONNECTION_TIMEOUT_MS);
         if (connection_semaphore_ != nullptr) {
             // 等待连接成功信号，最多30秒
@@ -187,25 +210,41 @@ public:
             }
         }
 
-        // 检查是否真的连接成功
-        if (!is_connected_) {
-            ESP_LOGE(TAG, "Connection failed");
-            websocket_.disconnect();
-            if (error_callback_) {
-                error_callback_(-1, "Connection failed");
+        // ========================================
+        // 第9步：检查连接结果并更新状态
+        // ========================================
+        // 重新加锁，检查连接状态并设置 is_recognizing_
+        {
+            std::lock_guard<std::mutex> lock(*state_mutex_);
+
+            // 检查是否真的连接成功
+            if (!is_connected_) {
+                ESP_LOGE(TAG, "Connection failed");
+                websocket_.disconnect();
+                if (error_callback_) {
+                    error_callback_(-1, "Connection failed");
+                }
+                return false;
             }
-            return false;
-        }
+
+            // 标记为识别中状态
+            is_recognizing_ = true;
+        }  // ← 锁在这里自动释放
 
         ESP_LOGI(TAG, "WebSocket connected successfully!");
 
+        // ========================================
         // 第10步：调用连接成功回调（对应 Android onConnected()）
+        // ========================================
         if (connected_callback_) {
             connected_callback_();
         }
 
-        // 第11步：发送ASR配置参数
+        // ========================================
+        // 第11步：发送ASR配置参数（Start Signal）
+        // ========================================
         // 格式与服务器要求的配置一致
+        // TODO: 改为发送完整的 Start Signal（与 Android 一致）
         std::string asr_config = R"({
             "type": "config",
             "format": "pcm",
@@ -220,11 +259,9 @@ public:
             // 发送配置失败但继续（非致命错误）
         }
 
-        // 第12步：标记为识别中状态
-        is_recognizing_ = true;
         ESP_LOGI(TAG, "ASR recognition started successfully");
 
-        // TODO: 第13步：启动接收任务（处理服务器响应）
+        // TODO: 第12步：启动接收任务（处理服务器响应）
         // xTaskCreate(ReceiveTaskEntry, "asr_receive", RECEIVE_TASK_STACK, this, ...);
 
         return true;
@@ -235,15 +272,29 @@ public:
      *
      * 由 event_callback_ 在收到 WEBSOCKET_EVENT_CONNECTED 事件时调用
      * 负责更新连接状态并释放信号量，唤醒等待中的 start() 函数
+     *
+     * 执行顺序：
+     * 1. 先加锁更新 is_connected_ 状态
+     * 2. 释放锁
+     * 3. 再释放信号量唤醒 start()
+     *
+     * 这样可以确保 start() 被唤醒后检查 is_connected_ 时，状态已经是 true
      */
     void onConnected() {
-        ESP_LOGI(TAG, "WebSocket connected");
+        ESP_LOGI(TAG, "onConnected: WebSocket connected, updating state...");
 
-        std::lock_guard<std::mutex> lock(*state_mutex_);
-        is_connected_ = true;
+        // 先加锁更新状态
+        {
+            std::lock_guard<std::mutex> lock(*state_mutex_);
+            is_connected_ = true;
+            ESP_LOGI(TAG, "onConnected: is_connected_ = true");
+        }  // ← 锁在这里释放
 
         // 释放信号量，唤醒等待的 start() 函数
+        // 注意：必须在锁释放之后再释放信号量
+        // 这样 start() 被唤醒后可以立即获取锁检查状态
         if (connection_semaphore_ != nullptr) {
+            ESP_LOGI(TAG, "onConnected: Releasing semaphore to wake up start()");
             xSemaphoreGive(connection_semaphore_);
         }
     }
