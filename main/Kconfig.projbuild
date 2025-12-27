@@ -671,6 +671,16 @@ config USE_AUDIO_DEBUGGER
     help
         Enable audio debugger, send audio data through UDP to the host machine
 
+config USE_AI_SDK_PROTOCOL
+    bool "Enable AI SDK Protocol (Cloud ASR)"
+    default n
+    help
+        使用 AI SDK 协议连接云端 ASR 服务器，替代默认的 WebSocket/MQTT 协议。
+        启用后，设备将连接到云端 ASR 服务器进行语音识别，而非小智私有服务器。
+        
+        Use AI SDK Protocol to connect to cloud ASR server instead of 
+        the default WebSocket/MQTT protocol for speech recognition.
+
 menu "WiFi Configuration Method"
     help
         WiFi Configuration Method Selection

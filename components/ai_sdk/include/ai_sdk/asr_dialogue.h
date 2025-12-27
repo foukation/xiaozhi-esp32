@@ -244,6 +244,22 @@ public:
      */
     void sendAudio(const uint8_t* data, size_t len);
 
+    /**
+     * @brief 检查是否已连接
+     * @return bool true 已连接，false 未连接
+     *
+     * 线程安全：可以从任意任务调用。
+     */
+    bool isConnected() const;
+
+    /**
+     * @brief 检查是否正在识别
+     * @return bool true 正在识别，false 未识别
+     *
+     * 线程安全：可以从任意任务调用。
+     */
+    bool isRecognizing() const;
+
     // 禁止拷贝和赋值
     AsrDialogue(const AsrDialogue&) = delete;
     AsrDialogue& operator=(const AsrDialogue&) = delete;

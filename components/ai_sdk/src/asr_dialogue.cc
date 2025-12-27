@@ -217,17 +217,17 @@ public:
         {
             std::lock_guard<std::mutex> lock(*state_mutex_);
 
-            // 检查是否真的连接成功
-            if (!is_connected_) {
-                websocket_.disconnect();
+        // 检查是否真的连接成功
+        if (!is_connected_) {
+            websocket_.disconnect();
                 // 对应 Android: onFailure() 中 listener?.onError(1, t.message)
                 // 连接失败使用 code=1
-                if (error_callback_) {
+            if (error_callback_) {
                     error_callback_(1, "Connection failed");
                     ESP_LOGE(TAG, "错误: code=1, message=Connection failed");
-                }
-                return false;
             }
+            return false;
+        }
 
             // 标记为识别中状态
             is_recognizing_ = true;
@@ -425,20 +425,36 @@ public:
      * - 发送失败：重试3次，失败后停止识别
      */
     void sendAudio(const uint8_t* data, size_t len) {
-        // TODO: 实现音频发送
-        // if (!is_recognizing_ || !is_connected_) {
-        //     ESP_LOGW(TAG, "Not ready, dropping audio data");
-        //     return;
-        // }
-        //
-        // TODO: 分包处理（如果data > 5120）
-        // const size_t CHUNK_SIZE = 5120;
-        // size_t offset = 0;
-        // while (offset < len) {
-        //     size_t chunk_len = std::min(CHUNK_SIZE, len - offset);
-        //     websocket_.sendBinary(data + offset, chunk_len);
-        //     offset += chunk_len;
-        // }
+        // 检查是否已连接且正在识别
+        {
+            std::lock_guard<std::mutex> lock(*state_mutex_);
+            if (!is_recognizing_ || !is_connected_) {
+                ESP_LOGW(TAG, "Not ready, dropping audio data");
+                return;
+            }
+        }
+
+        // 发送音频数据（Opus 编码后的二进制数据）
+        // 与 Android RealTimeUploader 保持一致
+        websocket_.sendBinary(data, len);
+    }
+
+    /**
+     * @brief 检查是否已连接
+     * @return bool true 已连接，false 未连接
+     */
+    bool isConnected() const {
+        std::lock_guard<std::mutex> lock(*state_mutex_);
+        return is_connected_;
+    }
+
+    /**
+     * @brief 检查是否正在识别
+     * @return bool true 正在识别，false 未识别
+     */
+    bool isRecognizing() const {
+        std::lock_guard<std::mutex> lock(*state_mutex_);
+        return is_recognizing_;
     }
 
     /**
@@ -644,6 +660,14 @@ void AsrDialogue::stop() {
 
 void AsrDialogue::sendAudio(const uint8_t* data, size_t len) {
     impl_->sendAudio(data, len);
+}
+
+bool AsrDialogue::isConnected() const {
+    return impl_->isConnected();
+}
+
+bool AsrDialogue::isRecognizing() const {
+    return impl_->isRecognizing();
 }
 
 // 接收任务入口函数空实现
@@ -1030,10 +1054,13 @@ void AsrDialogue::Impl::sendStartSignal() {
 
     // 基础配置（与 Android hht_ctx4.conf 对应）
     cJSON_AddStringToObject(data, "cuid", config.deviceNo.c_str());
-    cJSON_AddStringToObject(data, "format", "pcm");  // ESP32 使用 PCM 格式
+    // 音频格式：opus（与 Android 保持一致）
+    // Android 使用 OpusTools 编码后发送，ESP32 使用现有的 Opus 编码流程
+    cJSON_AddStringToObject(data, "format", "opus");
     cJSON_AddNumberToObject(data, "sample", 16000);
     cJSON_AddNumberToObject(data, "support_dcs", 2);
-    cJSON_AddNumberToObject(data, "chunk_size", 5120);
+    // chunk_size：与 Android hht_ctx4.conf 保持一致（10240 字节）
+    cJSON_AddNumberToObject(data, "chunk_size", 10240);
     cJSON_AddBoolToObject(data, "support_tts", true);
     cJSON_AddBoolToObject(data, "support_text2dcs", true);
     cJSON_AddStringToObject(data, "client_ip", "");

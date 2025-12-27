@@ -5,6 +5,7 @@
 #include "audio_codec.h"
 #include "mqtt_protocol.h"
 #include "websocket_protocol.h"
+#include "ai_sdk_protocol.h"
 #include "assets/lang_config.h"
 #include "mcp_server.h"
 #include "assets.h"
@@ -473,6 +474,17 @@ void Application::InitializeProtocol() {
 
     display->SetStatus(Lang::Strings::LOADING_PROTOCOL);
 
+    // 协议选择优先级：
+    // 1. AI SDK Protocol（如果启用）- 连接云端 ASR 服务器
+    // 2. MQTT Protocol（如果配置了 MQTT）- 连接小智私有服务器
+    // 3. WebSocket Protocol（如果配置了 WebSocket）- 连接小智私有服务器
+    // 4. 默认使用 MQTT Protocol
+#ifdef CONFIG_USE_AI_SDK_PROTOCOL
+    // 使用 AI SDK 协议连接云端 ASR 服务器
+    // 需要在 menuconfig 中启用 CONFIG_USE_AI_SDK_PROTOCOL
+    ESP_LOGI(TAG, "Using AI SDK Protocol (cloud ASR server)");
+    protocol_ = std::make_unique<AiSdkProtocol>();
+#else
     if (ota_->HasMqttConfig()) {
         protocol_ = std::make_unique<MqttProtocol>();
     } else if (ota_->HasWebsocketConfig()) {
@@ -481,6 +493,7 @@ void Application::InitializeProtocol() {
         ESP_LOGW(TAG, "No protocol specified in the OTA config, using MQTT");
         protocol_ = std::make_unique<MqttProtocol>();
     }
+#endif
 
     protocol_->OnConnected([this]() {
         DismissAlert();
