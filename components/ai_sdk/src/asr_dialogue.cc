@@ -676,7 +676,7 @@ void AsrDialogue::Impl::ReceiveTaskEntry(void* param) {
 }
 
 // 消息解析函数实现
-// 参考 Android DealSotaOne.onMessage() 实现
+// 参考 Android ASRIntelligentDialogue.dialogueResultParseDialogueResult() 实现
 void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
     // 将 payload 转换为字符串（用于日志和解析）
     std::string json_str(reinterpret_cast<const char*>(payload), len);
@@ -702,9 +702,14 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
     const char* type = type_item->valuestring;
     ESP_LOGI(TAG, "Received message type: %s", type);
 
+    // ========================================
     // 根据消息类型分发处理
+    // 与 Android DealSotaOne.onMessage() 对齐
+    // ========================================
+
     if (strcmp(type, "mid_result") == 0) {
         // ASR 中间结果（实时识别）
+        // 对应 Android: listener?.onMidResult(result)
         cJSON* result = cJSON_GetObjectItem(root, "result");
         if (result && cJSON_IsString(result)) {
             ESP_LOGI(TAG, "ASR mid_result: %s", result->valuestring);
@@ -718,6 +723,7 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
     }
     else if (strcmp(type, "fin_result") == 0) {
         // ASR 最终结果
+        // 对应 Android: listener?.onFinalResult(result)
         cJSON* result = cJSON_GetObjectItem(root, "result");
         if (result && cJSON_IsString(result)) {
             ESP_LOGI(TAG, "ASR fin_result: %s", result->valuestring);
@@ -730,45 +736,63 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
         }
     }
     else if (strcmp(type, "inside_rc") == 0) {
-        // 智能对话结果（包含 directives）
+        // ========================================
+        // 智能对话结果
+        // 对应 Android: dialogueResultParseDialogueResult(listener, result)
+        // ========================================
         cJSON* data = cJSON_GetObjectItem(root, "data");
         if (data) {
-            DialogueResult dialogue_result;
+            // 解析公共字段
+            std::string qid_str;
+            int is_end_val = 0;
 
-            // 解析 qid
             cJSON* qid = cJSON_GetObjectItem(data, "qid");
             if (qid && cJSON_IsString(qid)) {
-                dialogue_result.qid = qid->valuestring;
+                qid_str = qid->valuestring;
             }
 
-            // 解析 is_end
             cJSON* is_end = cJSON_GetObjectItem(data, "is_end");
             if (is_end && cJSON_IsNumber(is_end)) {
-                dialogue_result.is_end = is_end->valueint;
+                is_end_val = is_end->valueint;
             }
 
-            // 解析 assistant_answer
-            cJSON* assistant_answer = cJSON_GetObjectItem(data, "assistant_answer");
-            if (assistant_answer && cJSON_IsString(assistant_answer)) {
-                dialogue_result.assistant_answer_content = assistant_answer->valuestring;
-            }
-
-            // 解析 directives 数组
+            // 解析 directives 数组（与 Android 一致，data 下的 data 数组）
             cJSON* directives = cJSON_GetObjectItem(data, "data");
             if (directives && cJSON_IsArray(directives)) {
-                cJSON* directive = NULL;
-                cJSON_ArrayForEach(directive, directives) {
+                // 遍历每个 directive，逐个调用回调
+                // 对应 Android: for (i in 0 until directives.length())
+                int directives_count = cJSON_GetArraySize(directives);
+                for (int i = 0; i < directives_count; i++) {
+                    cJSON* directive = cJSON_GetArrayItem(directives, i);
+                    if (!directive) continue;
+
                     cJSON* header = cJSON_GetObjectItem(directive, "header");
                     cJSON* payload_obj = cJSON_GetObjectItem(directive, "payload");
 
+                    // 构建 DialogueResult（与 Android DialogueResult 结构对齐）
+                    DialogueResult dialogue_result;
+                    dialogue_result.qid = qid_str;
+                    dialogue_result.is_end = is_end_val;
+
+                    // 序列化 header 为 JSON 字符串
+                    // 对应 Android: DialogueResult(header = header, ...)
                     if (header) {
+                        char* header_str = cJSON_PrintUnformatted(header);
+                        if (header_str) {
+                            dialogue_result.header = header_str;
+                            free(header_str);
+                        }
+
+                        // 提取 name 作为便捷字段
                         cJSON* name = cJSON_GetObjectItem(header, "name");
                         if (name && cJSON_IsString(name)) {
                             dialogue_result.directive = name->valuestring;
-                            ESP_LOGI(TAG, "Directive: %s", dialogue_result.directive.c_str());
+                            ESP_LOGI(TAG, "Directive[%d]: %s", i, dialogue_result.directive.c_str());
                         }
                     }
 
+                    // 序列化 payload 为 JSON 字符串
+                    // 对应 Android: DialogueResult(payload = payload, ...)
                     if (payload_obj) {
                         char* payload_str = cJSON_PrintUnformatted(payload_obj);
                         if (payload_str) {
@@ -778,14 +802,53 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
                     }
 
                     // 每个 directive 都调用一次回调
+                    // 对应 Android: listener?.onDialogueResult(DialogueResult(...))
                     if (dialogue_callback_) {
                         dialogue_callback_(dialogue_result);
                     }
                 }
             } else {
-                // 没有 directives 数组，也调用回调
+                // 没有 directives 数组时也调用回调（兼容处理）
+                // 对应 Android: if (directives == null) { listener?.onDialogueResult(...) }
+                DialogueResult dialogue_result;
+                dialogue_result.qid = qid_str;
+                dialogue_result.is_end = is_end_val;
                 if (dialogue_callback_) {
                     dialogue_callback_(dialogue_result);
+                }
+            }
+
+            // ========================================
+            // is_end == 1 时解析 assistant_answer
+            // 对应 Android: if (isEnd == 1) { ... listener?.onDialogueResult(...) }
+            // ========================================
+            if (is_end_val == 1) {
+                cJSON* assistant_answer = cJSON_GetObjectItem(data, "assistant_answer");
+                if (assistant_answer && cJSON_IsString(assistant_answer)) {
+                    std::string answer_content = assistant_answer->valuestring;
+
+                    // 尝试解析 assistant_answer 中的 content 字段
+                    // 对应 Android: getAnswer(assistantAnswer)
+                    cJSON* answer_json = cJSON_Parse(answer_content.c_str());
+                    if (answer_json) {
+                        cJSON* content = cJSON_GetObjectItem(answer_json, "content");
+                        if (content && cJSON_IsString(content)) {
+                            answer_content = content->valuestring;
+                        }
+                        cJSON_Delete(answer_json);
+                    }
+
+                    ESP_LOGI(TAG, "Session end, assistant_answer: %s", answer_content.c_str());
+
+                    // 发送 is_end=1 的回调
+                    DialogueResult end_result;
+                    end_result.qid = qid_str;
+                    end_result.is_end = 1;
+                    end_result.assistant_answer_content = answer_content;
+
+                    if (dialogue_callback_) {
+                        dialogue_callback_(end_result);
+                    }
                 }
             }
         }
@@ -796,11 +859,54 @@ void AsrDialogue::Impl::parseMessage(const uint8_t* payload, size_t len) {
     }
     else if (strcmp(type, "dcs_decide") == 0) {
         // 决策消息，检查 end 标志
+        // 对应 Android: if (json.optInt("end", 0) == 1) { ... }
         cJSON* end = cJSON_GetObjectItem(root, "end");
         if (end && cJSON_IsNumber(end) && end->valueint == 1) {
             ESP_LOGI(TAG, "Session complete (dcs_decide end=1)");
             if (complete_callback_) {
                 complete_callback_();
+            }
+        }
+    }
+    else if (strstr(json_str.c_str(), "directive") != nullptr) {
+        // ========================================
+        // 处理独立的 directive 消息
+        // 对应 Android: if (text.contains("directive")) { ... }
+        // ========================================
+        cJSON* directive = cJSON_GetObjectItem(root, "directive");
+        if (directive) {
+            cJSON* header = cJSON_GetObjectItem(directive, "header");
+            cJSON* payload_obj = cJSON_GetObjectItem(directive, "payload");
+
+            DialogueResult dialogue_result;
+
+            if (header) {
+                char* header_str = cJSON_PrintUnformatted(header);
+                if (header_str) {
+                    dialogue_result.header = header_str;
+                    free(header_str);
+                }
+
+                cJSON* namespace_item = cJSON_GetObjectItem(header, "namespace");
+                cJSON* name = cJSON_GetObjectItem(header, "name");
+                if (namespace_item && cJSON_IsString(namespace_item) &&
+                    name && cJSON_IsString(name)) {
+                    dialogue_result.directive = std::string(namespace_item->valuestring) +
+                                                "." + name->valuestring;
+                    ESP_LOGI(TAG, "Standalone directive: %s", dialogue_result.directive.c_str());
+                }
+            }
+
+            if (payload_obj) {
+                char* payload_str = cJSON_PrintUnformatted(payload_obj);
+                if (payload_str) {
+                    dialogue_result.payload = payload_str;
+                    free(payload_str);
+                }
+            }
+
+            if (dialogue_callback_) {
+                dialogue_callback_(dialogue_result);
             }
         }
     }

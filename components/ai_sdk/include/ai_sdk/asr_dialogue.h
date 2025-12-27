@@ -33,13 +33,25 @@ struct AsrResult {
  * @struct DialogueResult
  * @brief 智能对话结果结构体
  *
- * 包含AI助手返回的完整对话信息，支持多种指令类型。
+ * 与 Android DialogueResult 对齐，包含AI助手返回的完整对话信息。
  * 支持文本、TTS、文生图、音乐播放等多种响应格式。
+ *
+ * 对应 Android:
+ * @code
+ * data class DialogueResult(
+ *     val qid: String,
+ *     val is_end: Int = 0,
+ *     val assistant_answer_content: String? = null,
+ *     val header: JSONObject? = null,
+ *     val payload: JSONObject? = null
+ * )
+ * @endcode
  */
 struct DialogueResult {
     /**
      * 问题唯一标识
      * 用于追踪对话上下文和关联多轮对话
+     * 对应 Android DialogueResult.qid
      */
     std::string qid;
 
@@ -47,28 +59,42 @@ struct DialogueResult {
      * 对话结束标志
      * 0: 对话进行中（流式响应）
      * 1: 对话结束（完整响应）
+     * 对应 Android DialogueResult.is_end
      */
     int is_end = 0;
 
     /**
      * 助手回答内容
-     * AI生成的完整文本回答
+     * AI生成的完整文本回答（is_end=1 时填充）
+     * 对应 Android DialogueResult.assistant_answer_content
      */
     std::string assistant_answer_content;
 
     /**
-     * 指令类型
-     * 用于区分不同类型的响应（文本、TTS、图片、音乐等）
-     * 可能值："Speak", "RenderStreamCard", "Play", "RenderMultiImageCard"等
+     * 通用渲染指令头部（JSON 字符串格式）
+     * 包含 namespace 和 name 字段
+     * 对应 Android DialogueResult.header (JSONObject)
+     *
+     * 示例：{"namespace": "ai.fxzsos.device_interface.voice_output", "name": "Speak"}
      */
-    std::string directive;
+    std::string header;
 
     /**
-     * 指令载荷
+     * 指令载荷（JSON 字符串格式）
      * 包含具体指令的数据，如TTS URL、图片URL、音乐URL等
-     * JSON格式字符串
+     * 对应 Android DialogueResult.payload (JSONObject)
+     *
+     * 示例（Speak）：{"url": "https://...", "format": "mp3"}
+     * 示例（RenderStreamCard）：{"answer": "天气晴朗..."}
      */
     std::string payload;
+
+    /**
+     * 指令名称（便捷字段）
+     * 从 header 中提取的 name 值，方便快速判断指令类型
+     * 可能值："Speak", "RenderStreamCard", "Play", "RenderMultiImageCard" 等
+     */
+    std::string directive;
 };
 
 /**
