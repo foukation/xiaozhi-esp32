@@ -169,25 +169,17 @@ bool AsrWebsocket::sendBinary(const uint8_t* data, size_t len) {
 }
 
 void AsrWebsocket::setMessageCallback(MessageCallback callback) {
-    // TODO: 互斥锁保护回调设置
-    // if (xSemaphoreTake(connection_mutex_) != pdTRUE) {
-    //     return;
-    // }
-    //
-    // message_callback_ = callback;
-    //
-    // xSemaphoreGive(connection_mutex_);
+    // 设置消息回调函数
+    // 当 WebSocket 收到服务器消息时，会通过此回调通知上层
+    // 回调参数: data(消息数据), len(数据长度), type(消息类型: 0=文本, 1=二进制)
+    message_callback_ = callback;
 }
 
 void AsrWebsocket::setEventCallback(EventCallback callback) {
-    // TODO: 互斥锁保护回调设置
-    // if (xSemaphoreTake(connection_mutex_) != pdTRUE) {
-    //     return;
-    // }
-    //
-    // event_callback_ = callback;
-    //
-    // xSemaphoreGive(connection_mutex_);
+    // 设置事件回调函数
+    // 当 WebSocket 连接状态发生变化时（连接成功、断开、错误等），会通过此回调通知上层
+    // 回调参数: event_id(事件类型), message(事件描述)
+    event_callback_ = callback;
 }
 
 bool AsrWebsocket::isConnected() const {
